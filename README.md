@@ -1,10 +1,14 @@
-# Przerwnik
+# Unsit
 
-A Windows tray app that reminds you to take breaks — and notices whether you are working or gaming.
-
-*(Working name, from the Polish "przerwa" — a break.)*
+A break reminder for Windows that knows whether you are working or gaming — and only counts a break if you actually got up.
 
 > **Status: early days.** There is no release yet and nothing to install.
+
+## Why
+
+I sit at the computer for hours without noticing — three at work, five if I am gaming. Every reminder I tried was either dismissed with one click and forgotten, or strict enough that I disabled it within a week. None of them knew whether I was in a code editor or halfway through a ranked match, so they behaved identically in both, and a fullscreen overlay landing mid-match is the fastest way to get an app uninstalled.
+
+If you have used Stretchly, Workrave or BreakTimer and wished one of them would notice you are mid-game, this is meant to be that.
 
 ## What it does
 

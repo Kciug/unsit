@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Przerwnik (working name) is a lightweight Windows tray app that nags you into taking breaks. What separates it from Stretchly/Workrave/BreakTimer: it has context-aware **modes** (Work, Gaming, Chill) with separate break policies, it escalates gradually instead of blocking outright, and a break only counts when you actually left the machine.
+Unsit is a lightweight Windows tray app that nags you into taking breaks. What separates it from Stretchly/Workrave/BreakTimer: it has context-aware **modes** (Work, Gaming, Chill) with separate break policies, it escalates gradually instead of blocking outright, and a break only counts when you actually left the machine.
 
 ## Repo status
 
-Pre-scaffolding — there is no code and no build system yet. The design doc lives at `docs/Przerwnik-plan.md`, which is **gitignored and local-only** (Polish, personal working notes). Do not assume it is present; this file is the self-contained reference. When it is present, record design decisions there rather than creating new docs — it has a dated "Decyzje" log and an open-questions checklist.
+Pre-scaffolding — there is no code and no build system yet. The design doc lives at `docs/unsit-plan.md`, which is **gitignored and local-only** (Polish, personal working notes). Do not assume it is present; this file is the self-contained reference. When it is present, record design decisions there rather than creating new docs — it has a dated "Decyzje" log and an open-questions checklist.
 
 Windows-only. UI language is still undecided, so do not hardcode user-facing strings in one language without asking.
 
@@ -37,7 +37,7 @@ src-tauri/src/
   main.rs       # Tauri setup, tray, windows, tick loop
   engine/       # state machine — pure logic, zero Win32
   platform/     # Win32: idle, fullscreen, monitors, microphone, lock
-  config.rs     # TOML in %APPDATA%\Przerwnik\config.toml
+  config.rs     # TOML in %APPDATA%\Unsit\config.toml
   stats.rs      # append-only JSONL events
 src/            # UI (TypeScript + Vite)
   settings/ popup/ overlay/
@@ -58,7 +58,7 @@ Breaking any of these breaks the project at its foundation:
 
 Three window kinds with different requirements: `settings` (ordinary), `popup` (frameless, topmost, bottom-right), `overlay` (**one per monitor**, transparent, fullscreen, topmost, off the taskbar). The overlay does not need to steal focus to work, and it cannot paint over an exclusive-fullscreen game — which is why Gaming mode only fires a toast while a game is running.
 
-Config is TOML at `%APPDATA%\Przerwnik\config.toml`; stats are append-only JSONL, with SQLite deferred until queries actually hurt.
+Config is TOML at `%APPDATA%\Unsit\config.toml`; stats are append-only JSONL, with SQLite deferred until queries actually hurt.
 
 ## Testing
 
