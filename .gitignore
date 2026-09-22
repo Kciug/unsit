@@ -1,0 +1,25 @@
+# Working notes — the plan stays local, it is not part of the public repo
+docs/
+
+# Rust / Tauri
+/src-tauri/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS / editors
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
