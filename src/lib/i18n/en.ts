@@ -1,0 +1,26 @@
+export const en = {
+  'popup.title': 'Time for a break',
+  'popup.start': 'Start',
+  'popup.snooze': '{minutes} more min',
+  'popup.finishMatch': 'Finish the match (+{minutes} min)',
+  'popup.overdue': 'This break is overdue',
+
+  'overlay.heading': 'Break time',
+  'overlay.remaining': '{time} left',
+  'overlay.paused': 'Counter stopped — step away from the keyboard',
+  'overlay.escapeHold': 'Hold to skip ({seconds}s)',
+  'overlay.escapeType': 'Type the sentence to skip',
+
+  'settings.title': 'Unsit settings',
+  'settings.notImplemented': 'Not built yet — edit config.toml by hand for now.',
+  'settings.language': 'Language',
+
+  'tray.pause': 'Pause',
+  'tray.resume': 'Resume',
+  'tray.settings': 'Settings',
+  'tray.quit': 'Quit',
+
+  'mode.work': 'Work',
+  'mode.gaming': 'Gaming',
+  'mode.chill': 'Chill',
+} as const
