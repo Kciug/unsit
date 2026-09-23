@@ -54,7 +54,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
 `-D warnings` means dead code fails the build. Code written ahead of the feature that will use it — `Effect::LockScreen`, `Event::SystemResumed`, `Context::Call`, `foreground_covers_monitor` — carries `#[allow(dead_code)]` with a note saying which version needs it. Add the note, not just the attribute.
 
-Tagging `v*` builds the NSIS installer through `tauri-action` and opens a **draft** release. A manual run of that workflow builds the installer and uploads it as an artifact without publishing.
+The Release workflow builds the NSIS installer through `tauri-action` — see **Versioning** below for how to run it.
 
 ## Layout
 
