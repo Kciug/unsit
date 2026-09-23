@@ -44,6 +44,7 @@ export interface UiState {
   counterHeld: boolean
   escapeMethod: EscapeMethod
   escapeHoldSeconds: number
+  autostart: boolean
 }
 
 export const initialState: UiState = {
@@ -60,6 +61,7 @@ export const initialState: UiState = {
   counterHeld: false,
   escapeMethod: 'hold',
   escapeHoldSeconds: 5,
+  autostart: true,
 }
 
 export const STATE_EVENT = 'unsit://state'

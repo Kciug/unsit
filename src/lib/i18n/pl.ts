@@ -19,6 +19,7 @@ export const pl: Dict = {
   'settings.title': 'Ustawienia Unsit',
   'settings.notImplemented': 'Jeszcze nie zrobione — na razie edytuj config.toml ręcznie.',
   'settings.language': 'Język',
+  'settings.autostart': 'Uruchamiaj z Windowsem',
 
   'tray.pause': 'Pauza',
   'tray.resume': 'Wznów',

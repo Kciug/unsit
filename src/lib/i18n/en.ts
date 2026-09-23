@@ -17,6 +17,7 @@ export const en = {
   'settings.title': 'Unsit settings',
   'settings.notImplemented': 'Not built yet — edit config.toml by hand for now.',
   'settings.language': 'Language',
+  'settings.autostart': 'Start with Windows',
 
   'tray.pause': 'Pause',
   'tray.resume': 'Resume',

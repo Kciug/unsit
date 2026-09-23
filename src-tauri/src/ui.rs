@@ -60,6 +60,7 @@ pub struct UiState {
     pub counter_held: bool,
     pub escape_method: EscapeMethod,
     pub escape_hold_seconds: u64,
+    pub autostart: bool,
 }
 
 impl UiState {
@@ -104,6 +105,7 @@ impl UiState {
             counter_held,
             escape_method: config.escape.method,
             escape_hold_seconds: config.escape.hold_sec,
+            autostart: config.general.autostart,
         }
     }
 }

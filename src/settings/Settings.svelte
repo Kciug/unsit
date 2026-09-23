@@ -1,6 +1,7 @@
 <script lang="ts">
   import { locale, t, type Locale } from '../lib/i18n'
-  import { setLocale } from '../lib/commands'
+  import { setAutostart, setLocale } from '../lib/commands'
+  import { uiState } from '../lib/state'
 
   const locales: { value: Locale; label: string }[] = [
     { value: 'en', label: 'English' },
@@ -25,6 +26,15 @@
         <option value={option.value}>{option.label}</option>
       {/each}
     </select>
+  </label>
+
+  <label>
+    <input
+      type="checkbox"
+      checked={$uiState.autostart}
+      onchange={(event) => void setAutostart(event.currentTarget.checked)}
+    />
+    {$t('settings.autostart')}
   </label>
 
   <p class="note">{$t('settings.notImplemented')}</p>

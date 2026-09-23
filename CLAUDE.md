@@ -8,11 +8,11 @@ Unsit is a lightweight Windows tray app that nags you into taking breaks. What s
 
 ## Repo status
 
-Usable. It lives in the tray, the menu switches between Work, Gaming and Chill, pause works, and the tick loop drives `engine::step` once a second off real `GetLastInputInfo`. Popups and per-monitor overlays appear, breaks count only while you are away, toasts fire, and stats land in `%APPDATA%\Unsit\stats.jsonl`. `npm run check`, `npm run build`, `cargo test` (16) and `cargo clippy` are all clean.
+v0.1 is complete. It lives in the tray, the menu switches between Work, Gaming and Chill, pause works, and the tick loop drives `engine::step` once a second off real `GetLastInputInfo`. Popups and per-monitor overlays appear over the taskbar, breaks count only while you are away, a finished break waits to be dismissed, leaving early costs a five-second hold, toasts fire, stats land in `%APPDATA%\Unsit\stats.jsonl`, and there is autostart plus a single-instance guard. `npm run check`, `npm run build`, `cargo test` (17) and `cargo clippy` are all clean.
 
-Left in v0.1: the escape hatch has no friction yet — `escape_break` fires the moment it is called, with no hold or retype — and there is no autostart or single-instance guard, so two copies will happily fight over the same config.
+Known and deferred: the overlay still reads as a window laid over the desktop rather than a dimmed screen. Cosmetic only, tracked as a bug in Sync (project Unsit).
 
-Deliberately absent: sound (`Effect::PlaySound` is a no-op, because silence beats a placeholder chime), automatic profile switching on game detection (v0.2 — detection works and already caps escalation to a toast mid-game, but switching profiles mid-cycle raises a deadline question worth settling on its own), and microphone-based call detection (pushed to v0.3+).
+Deliberately absent: sound (`Effect::PlaySound` is a no-op, because silence beats a placeholder chime), the `type` escape method (falls back to holding, so no button promises what it will not do), automatic profile switching on game detection (v0.2 — detection works and already caps escalation to a toast mid-game, but switching profiles mid-cycle raises a deadline question worth settling on its own), and microphone-based call detection (v0.3+).
 
 To watch a full cycle without waiting fifty minutes, set `interval_min = 1` and `break_min = 1` in `%APPDATA%\Unsit\config.toml`.
 
@@ -80,6 +80,8 @@ Breaking any of these breaks the project at its foundation:
 - **The break timer only advances while there is no input** (`GetLastInputInfo`, 5s threshold by default). Mouse movement pauses the counter rather than cancelling the break. Gamepads (XInput) are invisible to `GetLastInputInfo` — a known and deliberately accepted gap.
 - **Never touch game processes.** Game detection uses only the process list, `SHQueryUserNotificationState` and foreground-window geometry. No injection, no hooking — anti-cheat safety.
 - **Friction, not lockout.** An escape hatch (hold a button / retype a sentence) always exists and always lands in stats as a skipped break. Escalation is gradual — toast, popup, overlay, `LockWorkStation` (opt-in) — capped per profile by `max_escalation`.
+- **Autostart never registers from a debug build.** `apply_autostart` returns early under `debug_assertions`, because the entry it would write points into `target/debug` — a path that stops existing the moment that directory is cleaned, leaving a dead startup entry on the user's machine. The setting is still honoured in release builds.
+- **The single-instance plugin is registered first.** Two copies would fight over one config file and stack two overlays on every break. A second launch shows the settings window of the copy already running and exits.
 - **The backend owns the locale.** It lives in `config.toml` because the tray menu and toasts are built in Rust; the frontend mirrors whatever arrives in the state event. Never set the locale store directly as the source of truth.
 - **`config.toml` is written for a human, not for serde.** Durations are integers named by their unit (`interval_min`, `warning_sec`), never `std::time::Duration` — deriving `Serialize` on `Duration` turns every field into a `{ secs, nanos }` table, and this file is hand-edited until the settings UI lands in v0.3. `Profile` exposes `interval()`, `break_length()` and `snooze(used)` so the engine still works in `Duration`.
 

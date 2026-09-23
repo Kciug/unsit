@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri::{WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_notification::NotificationExt;
 
 use config::{Config, Locale, Profile};
@@ -328,6 +329,28 @@ fn hide_all(app: &AppHandle) {
     }
 }
 
+/// Brings the app's startup registration in line with the config.
+///
+/// Never in a debug build: it would register the path of the binary under
+/// `target/debug`, which stops existing the moment that directory is cleaned,
+/// leaving a dead startup entry behind on the user's machine.
+fn apply_autostart(app: &AppHandle, enabled: bool) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+
+    let manager = app.autolaunch();
+    let result = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+
+    if let Err(error) = result {
+        eprintln!("[unsit] could not update the autostart entry: {error}");
+    }
+}
+
 fn show_settings(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
@@ -413,6 +436,19 @@ fn toggle_pause(app: AppHandle) {
 }
 
 #[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) {
+    {
+        let shared = app.state::<Shared>();
+        let mut core = lock(&shared);
+        core.config.general.autostart = enabled;
+        let _ = core.config.save();
+    }
+
+    apply_autostart(&app, enabled);
+    dispatch(&app, Event::Tick);
+}
+
+#[tauri::command]
 fn set_locale(app: AppHandle, locale: String) {
     let parsed = match locale.as_str() {
         "pl" => Locale::Pl,
@@ -433,6 +469,18 @@ fn set_locale(app: AppHandle, locale: String) {
 
 pub fn run() {
     tauri::Builder::default()
+        // Has to come first, before anything else has a chance to start. Two
+        // copies would fight over one config file and stack two overlays on
+        // every break.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // Launching again is someone looking for the app, not asking for a
+            // second one, so show them where it lives.
+            show_settings(app);
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_notification::init())
         .on_window_event(|window, event| {
             // Closing settings must not take the app down with it — the tray is
@@ -457,6 +505,7 @@ pub fn run() {
             let context_source = WindowsContext::new(&config.detection.games);
             let machine = Machine::new(SystemTime::now(), &profile);
 
+            let autostart = config.general.autostart;
             let core = Core {
                 machine,
                 config,
@@ -470,6 +519,7 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tray::create(&handle, &model, on_menu)?;
+            apply_autostart(&handle, autostart);
 
             // Built now rather than when a break starts: a fullscreen webview
             // takes long enough to create that doing it on demand shows.
@@ -492,7 +542,8 @@ pub fn run() {
             extend_for_match,
             escape_break,
             toggle_pause,
-            set_locale
+            set_locale,
+            set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running Unsit");

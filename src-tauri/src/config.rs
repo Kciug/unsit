@@ -116,6 +116,10 @@ pub struct General {
     pub idle_threshold_sec: u64,
     #[serde(default = "default_locale")]
     pub locale: Locale,
+    /// Start with Windows. On by default — a break reminder you have to
+    /// remember to launch is a break reminder that never runs.
+    #[serde(default = "default_autostart")]
+    pub autostart: bool,
 }
 
 impl General {
@@ -168,6 +172,10 @@ fn default_hold_sec() -> u64 {
 
 fn default_locale() -> Locale {
     Locale::En
+}
+
+fn default_autostart() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -228,6 +236,7 @@ impl Default for Config {
                 default_profile: "work".to_owned(),
                 idle_threshold_sec: 5,
                 locale: Locale::En,
+                autostart: true,
             },
             profiles,
             detection: Detection::default(),
