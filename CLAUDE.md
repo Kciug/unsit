@@ -8,7 +8,9 @@ Unsit is a lightweight Windows tray app that nags you into taking breaks. What s
 
 ## Repo status
 
-Scaffolded, not yet working, but both halves are verified: `npm run check` and `npm run build` are clean, `cargo check` produces warnings only (all of them dead code, as expected for a skeleton), and `cargo test` runs four config tests. `engine::step` is still `todo!()` — the state machine is the next piece of work and nothing calls into it yet.
+Scaffolded, with the state machine done and covered by 16 passing tests, but nothing is wired together yet: no tray, no timer loop, no Win32, and `lib.rs` still holds empty command stubs. Running the app gets you an empty settings window. `npm run check`, `npm run build`, `cargo test` and `cargo clippy` are all clean.
+
+Next up is `platform/`, which is where the first real Win32 calls land, and the tick loop in `lib.rs` that drives `engine::step`.
 
 The design doc lives at `docs/unsit-plan.md`, which is **gitignored and local-only** (Polish, personal working notes). Do not assume it is present; this file is the self-contained reference. When it is present, record design decisions there rather than creating new docs — it has a dated "Decyzje" log and an open-questions checklist.
 
@@ -62,7 +64,10 @@ Breaking any of these breaks the project at its foundation:
 
 - **The Rust backend is the single source of truth.** State machine, clock, idle and context polling, config, stats. The TS frontend only renders: it receives state via Tauri events and sends actions via commands. **No time logic in JS** — the WebView throttles timers in hidden windows, so a JS-side countdown will silently lie.
 - **The frontend gets a view model, not the state machine.** `UiState` in `src/lib/state.ts` is built for rendering — seconds already resolved, no deadline timestamps — so the engine can change shape without dragging the UI along. Widen `UiState` deliberately; do not mirror the Rust enum into TypeScript.
-- **`engine/` is pure.** Its core is `step(state, event, now, idle, profile) -> (State, Vec<Effect>)` — no Win32, no I/O, no reading the clock inside. Effects are returned as data and performed by the caller. All Win32 lives in `platform/`. The engine sees the system only through `Clock`, `IdleSource` and `ContextSource` traits, swapped for fakes in tests.
+- **`engine/` is pure.** Its core is `step(machine, event, now, idle, policy) -> (Machine, Vec<Effect>)` — no Win32, no I/O, no reading the clock inside. Effects are returned as data and performed by the caller. All Win32 lives in `platform/`. The engine sees the system only through `Clock`, `IdleSource` and `ContextSource` traits, swapped for fakes in tests.
+- **`Machine` carries what `State` cannot.** `step` takes a `Machine` (state plus a `Cycle`) rather than a bare `State`, because "the match extension is offered once per cycle" and "three hours in total forces a long break" are bookkeeping that outlives any one state. `Policy` bundles the profile with the idle threshold, which lives in `[general]` because it describes the user rather than the profile.
+- **Only a break that happened buys back session time.** `Cycle::session_used` resets on `BreakTaken` and `NaturalBreak` but survives `BreakSkipped` — reset it on a skip and the session cap is defeated by always skipping.
+- **A tick gap is a signal, not noise.** A gap between ticks longer than a whole break means the machine slept, and is credited as a natural break. This is why tests advance a second at a time instead of jumping: a jump trips sleep detection.
 - **Deadlines are timestamps, never ticking counters.** Otherwise sleep/resume and system clock changes desync the state. Deadlines are recomputed on wake, and a sleep longer than the break length counts as a break taken. `Timestamp` is wall clock on purpose: a monotonic clock that stops during sleep would silently postpone every break by however long the machine was off.
 - **The break timer only advances while there is no input** (`GetLastInputInfo`, 5s threshold by default). Mouse movement pauses the counter rather than cancelling the break. Gamepads (XInput) are invisible to `GetLastInputInfo` — a known and deliberately accepted gap.
 - **Never touch game processes.** Game detection uses only the process list, `SHQueryUserNotificationState` and foreground-window geometry. No injection, no hooking — anti-cheat safety.

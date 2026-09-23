@@ -22,6 +22,18 @@ pub enum Escalation {
     Lock,
 }
 
+impl Escalation {
+    /// Position on the ladder, so a profile ceiling can be compared against it.
+    pub fn rank(self) -> u8 {
+        match self {
+            Escalation::Toast => 0,
+            Escalation::Popup => 1,
+            Escalation::Overlay => 2,
+            Escalation::Lock => 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EscapeMethod {
@@ -42,6 +54,9 @@ pub struct Profile {
     pub break_min: u64,
     #[serde(default = "default_warning_sec")]
     pub warning_sec: u64,
+    /// How long an ignored popup waits before the overlay takes over.
+    #[serde(default = "default_prompt_timeout_sec")]
+    pub prompt_timeout_sec: u64,
     /// Snooze lengths in order. Empty means no snoozing.
     #[serde(default)]
     pub snoozes_min: Vec<u64>,
@@ -71,6 +86,10 @@ impl Profile {
 
     pub fn warning(&self) -> Duration {
         Duration::from_secs(self.warning_sec)
+    }
+
+    pub fn prompt_timeout(&self) -> Duration {
+        Duration::from_secs(self.prompt_timeout_sec)
     }
 
     /// Snooze the user would get with `used` snoozes already spent.
@@ -130,6 +149,10 @@ fn default_warning_sec() -> u64 {
     120
 }
 
+fn default_prompt_timeout_sec() -> u64 {
+    60
+}
+
 fn default_idle_threshold_sec() -> u64 {
     5
 }
@@ -152,6 +175,7 @@ impl Default for Config {
                 interval_min: 50,
                 break_min: 10,
                 warning_sec: 120,
+                prompt_timeout_sec: 60,
                 snoozes_min: vec![5, 3],
                 max_escalation: Escalation::Overlay,
                 match_extension_min: None,
@@ -167,6 +191,7 @@ impl Default for Config {
                 interval_min: 60,
                 break_min: 5,
                 warning_sec: 120,
+                prompt_timeout_sec: 60,
                 // No snoozing here on purpose — "finish the match" replaces it.
                 snoozes_min: vec![],
                 max_escalation: Escalation::Overlay,
@@ -183,6 +208,7 @@ impl Default for Config {
                 interval_min: 90,
                 break_min: 5,
                 warning_sec: 120,
+                prompt_timeout_sec: 60,
                 snoozes_min: vec![10],
                 max_escalation: Escalation::Popup,
                 match_extension_min: None,
