@@ -34,6 +34,11 @@ impl Escalation {
     }
 }
 
+/// How much it costs to walk out of a break early.
+///
+/// `Type` — retyping a random sentence — is not built yet and currently falls
+/// back to holding, so the way out always exists and the button never promises
+/// something it will not do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EscapeMethod {

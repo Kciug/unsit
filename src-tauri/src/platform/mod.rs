@@ -8,7 +8,7 @@ use std::mem::size_of;
 use std::time::{Duration, SystemTime};
 
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, POINT, RECT};
+use windows::Win32::Foundation::{CloseHandle, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     MONITOR_DEFAULTTOPRIMARY,
@@ -24,7 +24,8 @@ use windows::Win32::UI::Shell::{
     QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId,
+    GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, SetWindowPos, HWND_TOPMOST,
+    SWP_NOACTIVATE, SWP_SHOWWINDOW,
 };
 
 use crate::engine::{Context, Timestamp};
@@ -220,6 +221,35 @@ pub fn primary_work_area() -> Option<(i32, i32, i32, i32)> {
         }
         let work = info.rcWork;
         Some((work.left, work.top, work.right, work.bottom))
+    }
+}
+
+/// Puts a window over everything, the taskbar included, without focusing it.
+///
+/// Being marked always-on-top is not enough on its own: the taskbar is topmost
+/// too, and among topmost windows the most recently positioned one wins. So the
+/// overlay has to re-assert its place every time it is shown, or the taskbar
+/// stays clickable straight through a break.
+///
+/// `SWP_NOACTIVATE` keeps the focus where it was, which matters when the thing
+/// underneath is a game.
+pub fn raise_above_everything(hwnd: isize, x: i32, y: i32, width: i32, height: i32) {
+    if hwnd == 0 {
+        return;
+    }
+
+    // SAFETY: the handle comes straight from the window that owns it, and is
+    // only used for the duration of this call.
+    unsafe {
+        let _ = SetWindowPos(
+            HWND(hwnd as *mut std::ffi::c_void),
+            Some(HWND_TOPMOST),
+            x,
+            y,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
     }
 }
 

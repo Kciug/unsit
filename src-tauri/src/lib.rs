@@ -300,6 +300,20 @@ fn show_overlays(app: &AppHandle) {
             eprintln!("[unsit] could not show {label}: {error}");
         }
         let _ = window.set_always_on_top(true);
+
+        // Being topmost is not enough to get above the taskbar, which is
+        // topmost as well. Re-assert the position by hand on every show.
+        if let Ok(handle) = window.hwnd() {
+            let origin = monitor.position();
+            let size = monitor.size();
+            platform::raise_above_everything(
+                handle.0 as isize,
+                origin.x,
+                origin.y,
+                size.width as i32,
+                size.height as i32,
+            );
+        }
     }
 }
 

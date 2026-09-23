@@ -6,6 +6,39 @@
 
   const done = $derived($uiState.kind === 'done')
   const remaining = $derived(Math.max(0, $uiState.requiredSeconds - $uiState.earnedSeconds))
+  const holdSeconds = $derived($uiState.escapeHoldSeconds || 5)
+
+  let heldFor = $state(0)
+  let holdStartedAt: number | null = null
+  let holdTimer: ReturnType<typeof setInterval> | null = null
+
+  const holdProgress = $derived(Math.min(1, heldFor / holdSeconds))
+
+  function startHold() {
+    if (holdTimer !== null) return
+
+    holdStartedAt = Date.now()
+    heldFor = 0
+    holdTimer = setInterval(() => {
+      if (holdStartedAt === null) return
+      // Read from the clock rather than counting ticks, for the same reason the
+      // backend keeps deadlines as timestamps: if the WebView throttles this
+      // interval the elapsed time still comes out right, the bar just fills in
+      // coarser steps.
+      heldFor = (Date.now() - holdStartedAt) / 1000
+      if (heldFor >= holdSeconds) {
+        releaseHold()
+        void escapeBreak()
+      }
+    }, 50)
+  }
+
+  function releaseHold() {
+    if (holdTimer !== null) clearInterval(holdTimer)
+    holdTimer = null
+    holdStartedAt = null
+    heldFor = 0
+  }
 </script>
 
 <!-- Fading in matters: an overlay that appears instantly reads as a punishment. -->
@@ -26,12 +59,17 @@
       <p class="held-note" transition:fade={{ duration: 150 }}>{$t('overlay.paused')}</p>
     {/if}
 
-    <button class="escape" onclick={escapeBreak}>
-      {#if $uiState.escapeMethod === 'hold'}
-        {$t('overlay.escapeHold', { seconds: $uiState.escapeHoldSeconds })}
-      {:else}
-        {$t('overlay.escapeType')}
-      {/if}
+    <!-- Friction, not a lock. Holding is the whole cost of leaving early, so a
+         plain click must not be enough. -->
+    <button
+      class="escape"
+      onpointerdown={startHold}
+      onpointerup={releaseHold}
+      onpointerleave={releaseHold}
+      onpointercancel={releaseHold}
+    >
+      <span class="fill" style="width: {holdProgress * 100}%"></span>
+      <span class="label">{$t('overlay.escapeHold', { seconds: holdSeconds })}</span>
     </button>
   {/if}
 </main>
@@ -91,15 +129,30 @@
 
   /* Deliberately understated: the way out exists, but it does not invite you. */
   .escape {
+    position: relative;
+    overflow: hidden;
     margin-top: 2rem;
     background: transparent;
     border-color: transparent;
     color: var(--muted);
     font-size: 0.85rem;
+    touch-action: none;
   }
 
   .escape:hover {
     border-color: var(--border);
     color: var(--text);
+  }
+
+  /* Fills as you hold, so the cost is visible while you are paying it. */
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--border);
+    pointer-events: none;
+  }
+
+  .label {
+    position: relative;
   }
 </style>
