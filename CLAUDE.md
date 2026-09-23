@@ -40,7 +40,21 @@ npm run check
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Single test: `cargo test --manifest-path src-tauri/Cargo.toml <test_name>`. CI should run `cargo test`, `cargo clippy` and `npm run check` on every PR, and build the installer via `tauri-action` on tags.
+Single test: `cargo test --manifest-path src-tauri/Cargo.toml <test_name>`.
+
+CI runs on every PR and on pushes to main, on `windows-latest` because the `windows` crate builds nowhere else. It is strict, so run these before pushing or it will fail on you:
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml
+```
+
+```bash
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+```
+
+`-D warnings` means dead code fails the build. Code written ahead of the feature that will use it — `Effect::LockScreen`, `Event::SystemResumed`, `Context::Call`, `foreground_covers_monitor` — carries `#[allow(dead_code)]` with a note saying which version needs it. Add the note, not just the attribute.
+
+Tagging `v*` builds the NSIS installer through `tauri-action` and opens a **draft** release. A manual run of that workflow builds the installer and uploads it as an artifact without publishing.
 
 ## Layout
 
@@ -72,7 +86,7 @@ Breaking any of these breaks the project at its foundation:
 
 - **The Rust backend is the single source of truth.** State machine, clock, idle and context polling, config, stats. The TS frontend only renders: it receives state via Tauri events and sends actions via commands. **No time logic in JS** — the WebView throttles timers in hidden windows, so a JS-side countdown will silently lie.
 - **The frontend gets a view model, not the state machine.** `UiState` in `src/lib/state.ts` is built for rendering — seconds already resolved, no deadline timestamps — so the engine can change shape without dragging the UI along. Widen `UiState` deliberately; do not mirror the Rust enum into TypeScript.
-- **`engine/` is pure.** Its core is `step(machine, event, now, idle, policy) -> (Machine, Vec<Effect>)` — no Win32, no I/O, no reading the clock inside. Effects are returned as data and performed by the caller. All Win32 lives in `platform/`. The engine sees the system only through `Clock`, `IdleSource` and `ContextSource` traits, swapped for fakes in tests.
+- **`engine/` is pure.** Its core is `step(machine, event, now, idle, policy) -> (Machine, Vec<Effect>)` — no Win32, no I/O, no reading the clock inside. Effects are returned as data and performed by the caller. All Win32 lives in `platform/`. The engine never reaches for the world: `now` and `idle` arrive as arguments, which is why the tests can drive a whole day through it a second at a time. Only the observed context comes through a trait, `ContextSource`, because the caller polls it rather than being handed it.
 - **`Machine` carries what `State` cannot.** `step` takes a `Machine` (state plus a `Cycle`) rather than a bare `State`, because "the match extension is offered once per cycle" and "three hours in total forces a long break" are bookkeeping that outlives any one state. `Policy` bundles the profile with the idle threshold, which lives in `[general]` because it describes the user rather than the profile.
 - **Only a break that happened buys back session time.** `Cycle::session_used` resets on `BreakTaken` and `NaturalBreak` but survives `BreakSkipped` — reset it on a skip and the session cap is defeated by always skipping.
 - **A tick gap is a signal, not noise.** A gap between ticks longer than a whole break means the machine slept, and is credited as a natural break. This is why tests advance a second at a time instead of jumping: a jump trips sleep detection.

@@ -43,8 +43,10 @@ pub fn build_menu(app: &AppHandle, model: &MenuModel) -> tauri::Result<Menu<Wry>
         })
         .collect::<tauri::Result<_>>()?;
 
-    let mode_refs: Vec<&dyn IsMenuItem<Wry>> =
-        modes.iter().map(|item| item as &dyn IsMenuItem<Wry>).collect();
+    let mode_refs: Vec<&dyn IsMenuItem<Wry>> = modes
+        .iter()
+        .map(|item| item as &dyn IsMenuItem<Wry>)
+        .collect();
     let mode_menu = Submenu::with_items(app, i18n::menu_mode(locale), true, &mode_refs)?;
 
     let pause_label = if model.paused {
@@ -65,14 +67,7 @@ pub fn build_menu(app: &AppHandle, model: &MenuModel) -> tauri::Result<Menu<Wry>
 
     Menu::with_items(
         app,
-        &[
-            &mode_menu,
-            &separator,
-            &pause,
-            &settings,
-            &separator,
-            &quit,
-        ],
+        &[&mode_menu, &separator, &pause, &settings, &separator, &quit],
     )
 }
 

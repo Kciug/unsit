@@ -5,7 +5,7 @@
 //! what keeps anti-cheat out of the picture.
 
 use std::mem::size_of;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND, POINT, RECT};
@@ -28,38 +28,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOACTIVATE, SWP_SHOWWINDOW,
 };
 
-use crate::engine::{Context, Timestamp};
+use crate::engine::Context;
 
-pub trait Clock {
-    fn now(&self) -> Timestamp;
-}
-
-pub trait IdleSource {
-    /// Time since the last input, via `GetLastInputInfo`.
-    ///
-    /// Known gap: gamepads are invisible to it, so controller input does not
-    /// register as activity.
-    fn idle_for(&self) -> Duration;
-}
-
+/// Where the observed context comes from.
+///
+/// A trait because the caller should not care, and because a fake one is the
+/// obvious way to drive the app without a real game running. The clock and the
+/// idle reading need no equivalent: the engine takes both as plain arguments,
+/// which is simpler and is what the tests already exercise.
 pub trait ContextSource {
     fn current(&self) -> Context;
-}
-
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> Timestamp {
-        SystemTime::now()
-    }
-}
-
-pub struct WindowsIdle;
-
-impl IdleSource for WindowsIdle {
-    fn idle_for(&self) -> Duration {
-        idle_duration()
-    }
 }
 
 pub struct WindowsContext {
@@ -171,7 +149,9 @@ fn foreground_process_name() -> Option<String> {
 /// Whether the foreground window covers its whole monitor.
 ///
 /// Tells borderless fullscreen apart from a merely large window, which decides
-/// whether an overlay stands a chance of being seen.
+/// whether an overlay stands a chance of being seen. Written ahead of the
+/// automatic profile switching in v0.2, which is the first thing that needs it.
+#[allow(dead_code)]
 pub fn foreground_covers_monitor() -> bool {
     // SAFETY: every handle is checked, and both structs are stack-allocated
     // with their size fields set where the API requires it.

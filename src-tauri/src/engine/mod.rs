@@ -24,6 +24,9 @@ pub type Timestamp = SystemTime;
 pub enum Context {
     Free,
     Game,
+    /// Detected from the microphone. Not wired up yet — call detection is v0.3+
+    /// — but the machine already knows how to hold escalation for one.
+    #[allow(dead_code)]
     Call,
     Presentation,
 }
@@ -37,21 +40,38 @@ impl Context {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum State {
-    Working { due: Timestamp },
-    Warning { due: Timestamp },
+    Working {
+        due: Timestamp,
+    },
+    Warning {
+        due: Timestamp,
+    },
     /// `since` is when the popup went up — an ignored popup escalates.
-    Prompt { since: Timestamp },
-    Snoozed { until: Timestamp },
-    Break { required: Duration, earned: Duration },
+    Prompt {
+        since: Timestamp,
+    },
+    Snoozed {
+        until: Timestamp,
+    },
+    Break {
+        required: Duration,
+        earned: Duration,
+    },
     /// The break is served, and the overlay is waiting to be dismissed.
     ///
     /// A separate state rather than going straight back to work: ending the
     /// break on its own means someone who actually left has no way of knowing
     /// it happened, and starts the next interval counting while they are still
     /// away from the desk.
-    Done { since: Timestamp },
-    Suspended { resume_to: Box<State> },
-    Paused { resume_to: Box<State> },
+    Done {
+        since: Timestamp,
+    },
+    Suspended {
+        resume_to: Box<State>,
+    },
+    Paused {
+        resume_to: Box<State>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +82,10 @@ pub enum Event {
     MatchExtension,
     EmergencyExit,
     ContextChanged(Context),
+    /// Nothing emits this yet: a sleep is already caught by the gap between
+    /// ticks. Kept because Windows can tell us directly, and that is strictly
+    /// better than inferring it.
+    #[allow(dead_code)]
     SystemResumed,
     PauseToggled,
 }
@@ -81,6 +105,9 @@ pub enum Effect {
     ShowOverlay,
     HideAll,
     PlaySound,
+    /// Hard mode, the last rung. The ladder stops at the overlay for now, so
+    /// nothing produces this — the handler and the Win32 call are both ready.
+    #[allow(dead_code)]
     LockScreen,
     Log(StatEvent),
 }
@@ -131,7 +158,9 @@ impl Machine {
     }
 
     pub fn snoozes_left(&self, profile: &Profile) -> u8 {
-        profile.snooze_count().saturating_sub(self.cycle.snoozes_used)
+        profile
+            .snooze_count()
+            .saturating_sub(self.cycle.snoozes_used)
     }
 
     pub fn match_extension_available(&self, profile: &Profile) -> bool {
@@ -172,7 +201,10 @@ fn on_tick(
     policy: &Policy,
     effects: &mut Vec<Effect>,
 ) {
-    let gap = machine.last_tick.map(|last| since(now, last)).unwrap_or_default();
+    let gap = machine
+        .last_tick
+        .map(|last| since(now, last))
+        .unwrap_or_default();
     machine.last_tick = Some(now);
 
     // A gap between ticks longer than a whole break means nobody was here —
@@ -258,7 +290,10 @@ fn on_accept(machine: &mut Machine, now: Timestamp, policy: &Policy, effects: &m
 
     if !matches!(
         machine.state,
-        State::Working { .. } | State::Warning { .. } | State::Prompt { .. } | State::Snoozed { .. }
+        State::Working { .. }
+            | State::Warning { .. }
+            | State::Prompt { .. }
+            | State::Snoozed { .. }
     ) {
         return;
     }
@@ -343,7 +378,10 @@ fn on_context_changed(
         // alone; everything else is held.
         if matches!(
             machine.state,
-            State::Break { .. } | State::Done { .. } | State::Suspended { .. } | State::Paused { .. }
+            State::Break { .. }
+                | State::Done { .. }
+                | State::Suspended { .. }
+                | State::Paused { .. }
         ) {
             return;
         }
@@ -363,7 +401,10 @@ fn on_system_resumed(
     policy: &Policy,
     effects: &mut Vec<Effect>,
 ) {
-    let slept = machine.last_tick.map(|last| since(now, last)).unwrap_or_default();
+    let slept = machine
+        .last_tick
+        .map(|last| since(now, last))
+        .unwrap_or_default();
     machine.last_tick = Some(now);
 
     if slept >= policy.profile.break_length() {

@@ -138,14 +138,22 @@ fn a_finished_break_waits_however_long_it_takes() {
     let (machine, now) = to_prompt(&policy);
 
     let (machine, _) = step(machine, Event::Accept, now, Duration::ZERO, &policy);
-    let (machine, _, now) =
-        advance(machine, now, profile.break_length(), Duration::from_secs(10), &policy);
+    let (machine, _, now) = advance(
+        machine,
+        now,
+        profile.break_length(),
+        Duration::from_secs(10),
+        &policy,
+    );
     assert!(matches!(machine.state, State::Done { .. }));
 
     // Ten minutes away from the desk after the break ended: still waiting, and
     // still not counting down to the next one.
     let (machine, effects, _) = advance(machine, now, minutes(10), minutes(10), &policy);
-    assert!(effects.is_empty(), "nothing should happen until someone comes back");
+    assert!(
+        effects.is_empty(),
+        "nothing should happen until someone comes back"
+    );
     assert!(matches!(machine.state, State::Done { .. }));
 }
 
@@ -159,7 +167,8 @@ fn walking_away_while_working_counts_as_a_break_and_resets_the_cycle() {
     machine.cycle.snoozes_used = 1;
 
     // Idle for a whole break length while the schedule still has time to run.
-    let (machine, effects, _) = advance(machine, start, SECOND * 2, profile.break_length(), &policy);
+    let (machine, effects, _) =
+        advance(machine, start, SECOND * 2, profile.break_length(), &policy);
 
     assert!(effects.contains(&Effect::Log(StatEvent::NaturalBreak)));
     assert!(matches!(machine.state, State::Working { .. }));
@@ -177,7 +186,10 @@ fn the_warning_toast_lands_before_the_popup() {
     let (machine, effects, _) = advance(machine, start, span, Duration::ZERO, &policy);
 
     assert!(effects.contains(&Effect::ShowToast));
-    assert!(!effects.contains(&Effect::ShowPopup), "too early for the popup");
+    assert!(
+        !effects.contains(&Effect::ShowPopup),
+        "too early for the popup"
+    );
     assert!(matches!(machine.state, State::Warning { .. }));
 }
 
@@ -210,9 +222,14 @@ fn an_ignored_popup_becomes_an_overlay_once_the_snoozes_are_gone() {
     // And the popup goes with it. Leaving it on screen strands a window whose
     // buttons the machine will refuse, which looks exactly like a broken app.
     let hide = effects.iter().position(|effect| *effect == Effect::HideAll);
-    let overlay = effects.iter().position(|effect| *effect == Effect::ShowOverlay);
+    let overlay = effects
+        .iter()
+        .position(|effect| *effect == Effect::ShowOverlay);
     assert!(hide.is_some(), "the popup must be dismissed: {effects:?}");
-    assert!(hide < overlay, "hide before showing, or the overlay flickers");
+    assert!(
+        hide < overlay,
+        "hide before showing, or the overlay flickers"
+    );
 }
 
 #[test]
@@ -226,7 +243,13 @@ fn waking_after_two_hours_asleep_counts_as_a_break() {
     let (machine, _, now) = advance(machine, start, SECOND, Duration::ZERO, &policy);
 
     let woken = plus(now, minutes(120));
-    let (machine, effects) = step(machine, Event::SystemResumed, woken, Duration::ZERO, &policy);
+    let (machine, effects) = step(
+        machine,
+        Event::SystemResumed,
+        woken,
+        Duration::ZERO,
+        &policy,
+    );
 
     assert!(effects.contains(&Effect::Log(StatEvent::NaturalBreak)));
     assert!(matches!(machine.state, State::Working { .. }));
@@ -246,7 +269,10 @@ fn a_call_during_the_prompt_suspends_it_and_gives_it_back_afterwards() {
         &policy,
     );
     assert!(matches!(machine.state, State::Suspended { .. }));
-    assert!(effects.contains(&Effect::HideAll), "no windows during a call");
+    assert!(
+        effects.contains(&Effect::HideAll),
+        "no windows during a call"
+    );
 
     // The call runs long; nothing escalates while it does.
     let (machine, effects, now) = advance(machine, now, minutes(10), Duration::ZERO, &policy);
@@ -344,7 +370,13 @@ fn a_taken_break_does_buy_back_session_time() {
     // Exactly the break length, so the run ends on the tick that completes it.
     // A second more and the machine would already be working again, putting a
     // second back on the session clock.
-    let (machine, _, _) = advance(machine, now, profile.break_length(), Duration::from_secs(10), &policy);
+    let (machine, _, _) = advance(
+        machine,
+        now,
+        profile.break_length(),
+        Duration::from_secs(10),
+        &policy,
+    );
 
     assert!(matches!(machine.state, State::Done { .. }));
     assert_eq!(machine.cycle.session_used, Duration::ZERO);
