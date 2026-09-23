@@ -8,9 +8,10 @@ use std::mem::size_of;
 use std::time::{Duration, SystemTime};
 
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, RECT};
+use windows::Win32::Foundation::{CloseHandle, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    MONITOR_DEFAULTTOPRIMARY,
 };
 use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::System::SystemInformation::GetTickCount;
@@ -197,6 +198,28 @@ pub fn foreground_covers_monitor() -> bool {
             && bounds.top <= info.rcMonitor.top
             && bounds.right >= info.rcMonitor.right
             && bounds.bottom >= info.rcMonitor.bottom
+    }
+}
+
+/// The primary monitor's work area: the screen minus the taskbar.
+///
+/// Returned as `(left, top, right, bottom)` in physical pixels. The monitor's
+/// own rectangle includes whatever the taskbar covers, so anything positioned
+/// against the bottom edge using that ends up underneath it.
+pub fn primary_work_area() -> Option<(i32, i32, i32, i32)> {
+    // SAFETY: MONITOR_DEFAULTTOPRIMARY always yields a valid monitor, and the
+    // struct is stack-allocated with its size field set as the API requires.
+    unsafe {
+        let monitor = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        let mut info = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            return None;
+        }
+        let work = info.rcWork;
+        Some((work.left, work.top, work.right, work.bottom))
     }
 }
 

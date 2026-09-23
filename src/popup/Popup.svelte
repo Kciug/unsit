@@ -3,7 +3,13 @@
   import { uiState } from '../lib/state'
   import { acceptBreak, extendForMatch, snooze } from '../lib/commands'
 
-  const canSnooze = $derived($uiState.snoozesLeft > 0 && $uiState.nextSnoozeMinutes !== null)
+  // The machine only accepts these while it is asking. If the popup is somehow
+  // still on screen after it moved on, the buttons should look inert rather
+  // than silently do nothing.
+  const listening = $derived($uiState.kind === 'prompt' || $uiState.kind === 'warning')
+  const canSnooze = $derived(
+    listening && $uiState.snoozesLeft > 0 && $uiState.nextSnoozeMinutes !== null,
+  )
 </script>
 
 <main>
@@ -14,7 +20,9 @@
   {/if}
 
   <div class="actions">
-    <button class="primary" onclick={acceptBreak}>{$t('popup.start')}</button>
+    <button class="primary" disabled={!listening} onclick={acceptBreak}>
+      {$t('popup.start')}
+    </button>
 
     {#if canSnooze}
       <button onclick={snooze}>
@@ -22,7 +30,7 @@
       </button>
     {/if}
 
-    {#if $uiState.matchExtensionAvailable}
+    {#if listening && $uiState.matchExtensionAvailable}
       <button onclick={extendForMatch}>
         {$t('popup.finishMatch', { minutes: $uiState.matchExtensionMinutes })}
       </button>

@@ -176,6 +176,13 @@ fn an_ignored_popup_becomes_an_overlay_once_the_snoozes_are_gone() {
     let (machine, effects, _) = advance(machine, now, span, Duration::ZERO, &policy);
     assert!(effects.contains(&Effect::ShowOverlay));
     assert!(matches!(machine.state, State::Break { .. }));
+
+    // And the popup goes with it. Leaving it on screen strands a window whose
+    // buttons the machine will refuse, which looks exactly like a broken app.
+    let hide = effects.iter().position(|effect| *effect == Effect::HideAll);
+    let overlay = effects.iter().position(|effect| *effect == Effect::ShowOverlay);
+    assert!(hide.is_some(), "the popup must be dismissed: {effects:?}");
+    assert!(hide < overlay, "hide before showing, or the overlay flickers");
 }
 
 #[test]

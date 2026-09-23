@@ -48,6 +48,22 @@ struct Shared {
     core: Mutex<Core>,
 }
 
+/// Locks the shared state, recovering from a poisoned mutex.
+///
+/// A panic in one tick should cost that tick, not brick the app. With a plain
+/// `lock()`, every later call returns `Err` forever, so the tray keeps its icon
+/// and the popup stays on screen while nothing behind them responds any more —
+/// the worst possible failure mode for something that is supposed to nag you.
+fn lock(shared: &Shared) -> std::sync::MutexGuard<'_, Core> {
+    match shared.core.lock() {
+        Ok(core) => core,
+        Err(poisoned) => {
+            eprintln!("[unsit] shared state was poisoned by an earlier panic; recovering");
+            poisoned.into_inner()
+        }
+    }
+}
+
 /// One turn of the machine: observe, step, publish, act.
 ///
 /// The lock is held only for the engine call. Everything that touches a window
@@ -58,10 +74,13 @@ fn dispatch(app: &AppHandle, event: Event) {
     let now = SystemTime::now();
     let idle = platform::idle_duration();
 
+    #[cfg(debug_assertions)]
+    let described = format!("{event:?}");
+    #[cfg(debug_assertions)]
+    let user_driven = !matches!(event, Event::Tick);
+
     let (effects, snapshot, profile_name) = {
-        let Ok(mut core) = shared.core.lock() else {
-            return;
-        };
+        let mut core = lock(&shared);
         let Some(profile) = core.profile() else {
             return;
         };
@@ -102,6 +121,16 @@ fn dispatch(app: &AppHandle, event: Event) {
 
         (effects, snapshot, core.profile.clone())
     };
+
+    // A dead button and a button the machine deliberately ignores look the
+    // same from outside, so say which one it was.
+    #[cfg(debug_assertions)]
+    if user_driven || !effects.is_empty() {
+        eprintln!(
+            "[unsit] {described} -> {:?}, effects: {effects:?}",
+            snapshot.kind
+        );
+    }
 
     let locale = snapshot.locale;
     let _ = app.emit(STATE_EVENT, &snapshot);
@@ -170,17 +199,17 @@ fn show_popup(app: &AppHandle) {
         return;
     };
 
-    // Bottom-right of the primary monitor, out of the way of whatever is open.
-    if let Ok(Some(monitor)) = window.primary_monitor() {
-        if let Ok(size) = window.outer_size() {
-            let scale = monitor.scale_factor();
-            let margin = (POPUP_MARGIN * scale) as i32;
-            let area = monitor.size();
-            let origin = monitor.position();
-            let x = origin.x + area.width as i32 - size.width as i32 - margin;
-            let y = origin.y + area.height as i32 - size.height as i32 - margin;
-            let _ = window.set_position(PhysicalPosition::new(x, y));
-        }
+    // Bottom-right of the *work area*, not of the monitor: the monitor's own
+    // rectangle includes the strip the taskbar covers, so measuring from its
+    // bottom edge puts the popup underneath the taskbar.
+    if let (Some((_, _, right, bottom)), Ok(size)) =
+        (platform::primary_work_area(), window.outer_size())
+    {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let margin = (POPUP_MARGIN * scale) as i32;
+        let x = right - size.width as i32 - margin;
+        let y = bottom - size.height as i32 - margin;
+        let _ = window.set_position(PhysicalPosition::new(x, y));
     }
 
     let _ = window.show();
@@ -261,9 +290,7 @@ fn show_settings(app: &AppHandle) {
 fn set_profile(app: &AppHandle, name: &str) {
     let model = {
         let shared = app.state::<Shared>();
-        let Ok(mut core) = shared.core.lock() else {
-            return;
-        };
+        let mut core = lock(&shared);
         if !core.config.profiles.contains_key(name) {
             return;
         }
@@ -284,9 +311,7 @@ fn set_profile(app: &AppHandle, name: &str) {
 fn refresh_menu(app: &AppHandle) {
     let model = {
         let shared = app.state::<Shared>();
-        let Ok(core) = shared.core.lock() else {
-            return;
-        };
+        let core = lock(&shared);
         core.menu_model()
     };
     tray::refresh(app, &model);
@@ -340,9 +365,7 @@ fn set_locale(app: AppHandle, locale: String) {
 
     {
         let shared = app.state::<Shared>();
-        let Ok(mut core) = shared.core.lock() else {
-            return;
-        };
+        let mut core = lock(&shared);
         core.config.general.locale = parsed;
         let _ = core.config.save();
     }

@@ -408,6 +408,10 @@ fn begin_break(machine: &mut Machine, required: Duration, effects: &mut Vec<Effe
         required,
         earned: Duration::ZERO,
     };
+    // Clear the popup first. Leaving it up behind the overlay strands a window
+    // whose buttons the machine will refuse, which reads as the app being
+    // broken rather than as having moved on.
+    effects.push(Effect::HideAll);
     effects.push(Effect::ShowOverlay);
 }
 
