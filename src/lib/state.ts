@@ -8,6 +8,7 @@ export type StateKind =
   | 'prompt'
   | 'snoozed'
   | 'break'
+  | 'done'
   | 'suspended'
   | 'paused'
 

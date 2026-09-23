@@ -99,6 +99,13 @@ pub fn tooltip_counting(locale: Locale, mode: &str, remaining: &str) -> String {
     }
 }
 
+pub fn tooltip_done(locale: Locale) -> String {
+    match locale {
+        Locale::En => "Unsit — break over, welcome back".into(),
+        Locale::Pl => "Unsit — po przerwie, witaj z powrotem".into(),
+    }
+}
+
 pub fn tooltip_paused(locale: Locale) -> String {
     match locale {
         Locale::En => "Unsit — paused".into(),

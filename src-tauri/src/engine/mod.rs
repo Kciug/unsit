@@ -43,6 +43,13 @@ pub enum State {
     Prompt { since: Timestamp },
     Snoozed { until: Timestamp },
     Break { required: Duration, earned: Duration },
+    /// The break is served, and the overlay is waiting to be dismissed.
+    ///
+    /// A separate state rather than going straight back to work: ending the
+    /// break on its own means someone who actually left has no way of knowing
+    /// it happened, and starts the next interval counting while they are still
+    /// away from the desk.
+    Done { since: Timestamp },
     Suspended { resume_to: Box<State> },
     Paused { resume_to: Box<State> },
 }
@@ -223,19 +230,32 @@ fn on_tick(
             if idle >= policy.idle_threshold {
                 let earned = earned.saturating_add(gap);
                 if earned >= required {
-                    finish_cycle(machine, now, policy, StatEvent::BreakTaken, effects);
+                    complete_break(machine, now, effects);
                 } else {
                     machine.state = State::Break { required, earned };
                 }
             }
         }
 
+        // Waiting on the user to come back and say so.
+        State::Done { .. } => {}
+
         // Held on purpose: a call or a manual pause stops the clock entirely.
         State::Suspended { .. } | State::Paused { .. } => {}
     }
 }
 
-fn on_accept(machine: &mut Machine, _now: Timestamp, policy: &Policy, effects: &mut Vec<Effect>) {
+fn on_accept(machine: &mut Machine, now: Timestamp, policy: &Policy, effects: &mut Vec<Effect>) {
+    // Coming back from a finished break. The next interval starts here, when
+    // the user is actually at the desk again — not when the timer ran out.
+    if matches!(machine.state, State::Done { .. }) {
+        machine.state = State::Working {
+            due: plus(now, policy.profile.interval()),
+        };
+        effects.push(Effect::HideAll);
+        return;
+    }
+
     if !matches!(
         machine.state,
         State::Working { .. } | State::Warning { .. } | State::Prompt { .. } | State::Snoozed { .. }
@@ -319,10 +339,11 @@ fn on_context_changed(
     machine.context = context;
 
     if context.holds_escalation() {
-        // A break already under way is left alone; everything else is held.
+        // A break already under way, or one waiting to be dismissed, is left
+        // alone; everything else is held.
         if matches!(
             machine.state,
-            State::Break { .. } | State::Suspended { .. } | State::Paused { .. }
+            State::Break { .. } | State::Done { .. } | State::Suspended { .. } | State::Paused { .. }
         ) {
             return;
         }
@@ -358,8 +379,9 @@ fn on_pause_toggled(
 ) {
     match machine.state.clone() {
         State::Paused { resume_to } => resume(machine, *resume_to, now, policy, effects),
-        // Pausing out of a break would be an escape hatch without the friction.
-        State::Break { .. } => {}
+        // Pausing out of a break would be an escape hatch without the friction,
+        // and a finished one is waiting on a click, not on the clock.
+        State::Break { .. } | State::Done { .. } => {}
         previous => {
             machine.state = State::Paused {
                 resume_to: Box::new(previous),
@@ -401,6 +423,17 @@ fn enter_prompt(machine: &mut Machine, now: Timestamp, policy: &Policy, effects:
     } else {
         effects.push(Effect::ShowToast);
     }
+}
+
+/// The break has been served. The overlay stays up until it is dismissed.
+fn complete_break(machine: &mut Machine, now: Timestamp, effects: &mut Vec<Effect>) {
+    machine.cycle.snoozes_used = 0;
+    machine.cycle.match_extension_used = false;
+    machine.cycle.session_used = Duration::ZERO;
+
+    machine.state = State::Done { since: now };
+    // Deliberately no HideAll: the overlay is how the user finds out.
+    effects.push(Effect::Log(StatEvent::BreakTaken));
 }
 
 fn begin_break(machine: &mut Machine, required: Duration, effects: &mut Vec<Effect>) {

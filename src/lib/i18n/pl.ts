@@ -10,6 +10,9 @@ export const pl: Dict = {
   'overlay.heading': 'Przerwa',
   'overlay.remaining': 'zostało {time}',
   'overlay.paused': 'Licznik stoi — odejdź od klawiatury',
+  'overlay.doneHeading': 'Koniec przerwy',
+  'overlay.doneBody': 'Wracaj, kiedy będziesz gotowy.',
+  'overlay.backToWork': 'Wracam do pracy',
   'overlay.escapeHold': 'Przytrzymaj, żeby pominąć ({seconds}s)',
   'overlay.escapeType': 'Przepisz zdanie, żeby pominąć',
 

@@ -113,10 +113,40 @@ fn a_break_ends_once_enough_time_is_earned() {
 
     let (machine, _) = step(machine, Event::Accept, now, Duration::ZERO, &policy);
     let span = profile.break_length() + SECOND;
-    let (machine, effects, _) = advance(machine, now, span, Duration::from_secs(10), &policy);
+    let (machine, effects, now) = advance(machine, now, span, Duration::from_secs(10), &policy);
 
     assert!(effects.contains(&Effect::Log(StatEvent::BreakTaken)));
-    assert!(matches!(machine.state, State::Working { .. }));
+    assert!(matches!(machine.state, State::Done { .. }));
+    assert!(
+        !effects.contains(&Effect::HideAll),
+        "the overlay has to stay up, or someone who left never learns the break happened"
+    );
+
+    // The next interval starts on the way back, not when the timer ran out.
+    let (machine, effects) = step(machine, Event::Accept, now, Duration::ZERO, &policy);
+    assert!(effects.contains(&Effect::HideAll));
+    match machine.state {
+        State::Working { due } => assert_eq!(due, plus(now, profile.interval())),
+        other => panic!("expected work to resume, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_finished_break_waits_however_long_it_takes() {
+    let profile = profile("work");
+    let policy = policy(&profile);
+    let (machine, now) = to_prompt(&policy);
+
+    let (machine, _) = step(machine, Event::Accept, now, Duration::ZERO, &policy);
+    let (machine, _, now) =
+        advance(machine, now, profile.break_length(), Duration::from_secs(10), &policy);
+    assert!(matches!(machine.state, State::Done { .. }));
+
+    // Ten minutes away from the desk after the break ended: still waiting, and
+    // still not counting down to the next one.
+    let (machine, effects, _) = advance(machine, now, minutes(10), minutes(10), &policy);
+    assert!(effects.is_empty(), "nothing should happen until someone comes back");
+    assert!(matches!(machine.state, State::Done { .. }));
 }
 
 #[test]
@@ -316,7 +346,7 @@ fn a_taken_break_does_buy_back_session_time() {
     // second back on the session clock.
     let (machine, _, _) = advance(machine, now, profile.break_length(), Duration::from_secs(10), &policy);
 
-    assert!(matches!(machine.state, State::Working { .. }));
+    assert!(matches!(machine.state, State::Done { .. }));
     assert_eq!(machine.cycle.session_used, Duration::ZERO);
 }
 

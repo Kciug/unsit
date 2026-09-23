@@ -22,6 +22,7 @@ pub enum StateKind {
     Prompt,
     Snoozed,
     Break,
+    Done,
     Suspended,
     Paused,
 }
@@ -34,6 +35,7 @@ impl From<&State> for StateKind {
             State::Prompt { .. } => StateKind::Prompt,
             State::Snoozed { .. } => StateKind::Snoozed,
             State::Break { .. } => StateKind::Break,
+            State::Done { .. } => StateKind::Done,
             State::Suspended { .. } => StateKind::Suspended,
             State::Paused { .. } => StateKind::Paused,
         }

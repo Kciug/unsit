@@ -172,6 +172,7 @@ fn tooltip(snapshot: &UiState, mode: &str) -> String {
                 i18n::tooltip_break(locale, &clock(left))
             }
         }
+        StateKind::Done => i18n::tooltip_done(locale),
         StateKind::Paused | StateKind::Suspended => i18n::tooltip_paused(locale),
         StateKind::Prompt => i18n::tooltip_due(locale, mode),
         _ => match snapshot.seconds_left {
@@ -237,6 +238,11 @@ fn ensure_overlays(app: &AppHandle) -> tauri::Result<()> {
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .transparent(true)
+                // Without this the edges stay grabbable even with no frame, so
+                // the overlay can be resized or shrugged off like any window.
+                .resizable(false)
+                .maximizable(false)
+                .minimizable(false)
                 // Taking focus is not needed to be seen, and stealing it from a
                 // game is exactly the sort of thing that gets an app deleted.
                 .focused(false)

@@ -8,6 +8,9 @@ export const en = {
   'overlay.heading': 'Break time',
   'overlay.remaining': '{time} left',
   'overlay.paused': 'Counter stopped — step away from the keyboard',
+  'overlay.doneHeading': 'Break over',
+  'overlay.doneBody': 'Come back whenever you are ready.',
+  'overlay.backToWork': 'Back to work',
   'overlay.escapeHold': 'Hold to skip ({seconds}s)',
   'overlay.escapeType': 'Type the sentence to skip',
 
