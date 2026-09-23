@@ -8,9 +8,11 @@ Unsit is a lightweight Windows tray app that nags you into taking breaks. What s
 
 ## Repo status
 
-End to end but not yet usable. The tick loop drives `engine::step` once a second, real `GetLastInputInfo` feeds it, effects open the popup and a per-monitor overlay, breaks count only while you are away, toasts fire, and stats land in `%APPDATA%\Unsit\stats.jsonl`. `npm run check`, `npm run build`, `cargo test` (16) and `cargo clippy` are all clean.
+Usable. It lives in the tray, the menu switches between Work, Gaming and Chill, pause works, and the tick loop drives `engine::step` once a second off real `GetLastInputInfo`. Popups and per-monitor overlays appear, breaks count only while you are away, toasts fire, and stats land in `%APPDATA%\Unsit\stats.jsonl`. `npm run check`, `npm run build`, `cargo test` (16) and `cargo clippy` are all clean.
 
-Missing before it is worth using: **no tray**, so there is no way to pause, switch profile or quit short of killing the process, and the settings window is `visible: true` only because nothing else could reopen it. Also absent: call detection via the microphone (v0.2), the escape-hatch friction UI (the command fires instantly, with no hold or retype), and sound — `Effect::PlaySound` is deliberately a no-op rather than a placeholder chime.
+Left in v0.1: the escape hatch has no friction yet — `escape_break` fires the moment it is called, with no hold or retype — and there is no autostart or single-instance guard, so two copies will happily fight over the same config.
+
+Deliberately absent: sound (`Effect::PlaySound` is a no-op, because silence beats a placeholder chime), automatic profile switching on game detection (v0.2 — detection works and already caps escalation to a toast mid-game, but switching profiles mid-cycle raises a deadline question worth settling on its own), and microphone-based call detection (pushed to v0.3+).
 
 To watch a full cycle without waiting fifty minutes, set `interval_min = 1` and `break_min = 1` in `%APPDATA%\Unsit\config.toml`.
 

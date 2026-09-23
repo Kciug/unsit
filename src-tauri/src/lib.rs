@@ -3,19 +3,20 @@ mod engine;
 mod i18n;
 mod platform;
 mod stats;
+mod tray;
 mod ui;
 
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 
 use config::{Config, Locale, Profile};
-use engine::{Effect, Event, Machine, Policy};
+use engine::{Effect, Event, Machine, Policy, State};
 use platform::{ContextSource, WindowsContext};
-use ui::{UiState, STATE_EVENT};
+use ui::{StateKind, UiState, STATE_EVENT};
 
 const TICK: Duration = Duration::from_secs(1);
 /// Gap between the popup and the corner of the screen, in logical pixels.
@@ -32,6 +33,15 @@ impl Core {
     fn profile(&self) -> Option<Profile> {
         self.config.profiles.get(&self.profile).cloned()
     }
+
+    fn menu_model(&self) -> tray::MenuModel {
+        tray::MenuModel {
+            locale: self.config.general.locale,
+            profiles: self.config.profiles.keys().cloned().collect(),
+            current: self.profile.clone(),
+            paused: matches!(self.machine.state, State::Paused { .. }),
+        }
+    }
 }
 
 struct Shared {
@@ -40,9 +50,9 @@ struct Shared {
 
 /// One turn of the machine: observe, step, publish, act.
 ///
-/// The lock is held only for the engine call. Effects run afterwards, on the
-/// main thread, because window operations on Windows do not appreciate being
-/// driven from a worker.
+/// The lock is held only for the engine call. Everything that touches a window
+/// runs afterwards on the main thread, because Windows window operations driven
+/// from a worker are a reliable way to deadlock.
 fn dispatch(app: &AppHandle, event: Event) {
     let shared = app.state::<Shared>();
     let now = SystemTime::now();
@@ -96,12 +106,10 @@ fn dispatch(app: &AppHandle, event: Event) {
     let locale = snapshot.locale;
     let _ = app.emit(STATE_EVENT, &snapshot);
 
-    if effects.is_empty() {
-        return;
-    }
-
+    let tip = tooltip(&snapshot, &i18n::profile_name(locale, &profile_name));
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
+        tray::set_tooltip(&handle, &tip);
         for effect in effects {
             apply(&handle, effect, &profile_name, locale);
         }
@@ -114,11 +122,38 @@ fn apply(app: &AppHandle, effect: Effect, profile: &str, locale: Locale) {
         Effect::ShowPopup => show_popup(app),
         Effect::ShowOverlay => show_overlays(app),
         Effect::HideAll => hide_all(app),
-        // Sound is still unwired; silence is better than a placeholder chime.
+        // Sound is still unwired; silence beats a placeholder chime.
         Effect::PlaySound => {}
         Effect::LockScreen => platform::lock_workstation(),
         Effect::Log(stat) => stats::record(stat, profile),
     }
+}
+
+fn tooltip(snapshot: &UiState, mode: &str) -> String {
+    let locale = snapshot.locale;
+
+    match snapshot.kind {
+        StateKind::Break => {
+            if snapshot.counter_held {
+                i18n::tooltip_held(locale)
+            } else {
+                let left = snapshot
+                    .required_seconds
+                    .saturating_sub(snapshot.earned_seconds);
+                i18n::tooltip_break(locale, &clock(left))
+            }
+        }
+        StateKind::Paused | StateKind::Suspended => i18n::tooltip_paused(locale),
+        StateKind::Prompt => i18n::tooltip_due(locale, mode),
+        _ => match snapshot.seconds_left {
+            Some(left) => i18n::tooltip_counting(locale, mode, &clock(left)),
+            None => i18n::tooltip_due(locale, mode),
+        },
+    }
+}
+
+fn clock(seconds: u64) -> String {
+    format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
 fn show_toast(app: &AppHandle, locale: Locale) {
@@ -208,6 +243,68 @@ fn hide_all(app: &AppHandle) {
     }
 }
 
+fn show_settings(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// Switching mode starts a fresh cycle on the new cadence.
+///
+/// The alternative — carrying the old deadline over — is worse in both
+/// directions: switching to Gaming mid-afternoon would fire a break instantly,
+/// and switching to Work would quietly stretch one. It does mean a determined
+/// user can push a break away by toggling modes, which is a fair trade for a
+/// deliberate action in a tool you point at yourself.
+fn set_profile(app: &AppHandle, name: &str) {
+    let model = {
+        let shared = app.state::<Shared>();
+        let Ok(mut core) = shared.core.lock() else {
+            return;
+        };
+        if !core.config.profiles.contains_key(name) {
+            return;
+        }
+
+        core.profile = name.to_owned();
+        let Some(profile) = core.profile() else {
+            return;
+        };
+        core.machine = Machine::new(SystemTime::now(), &profile);
+        core.menu_model()
+    };
+
+    tray::refresh(app, &model);
+    hide_all(app);
+    dispatch(app, Event::Tick);
+}
+
+fn refresh_menu(app: &AppHandle) {
+    let model = {
+        let shared = app.state::<Shared>();
+        let Ok(core) = shared.core.lock() else {
+            return;
+        };
+        core.menu_model()
+    };
+    tray::refresh(app, &model);
+}
+
+fn on_menu(app: &AppHandle, id: &str) {
+    if let Some(name) = id.strip_prefix(tray::MODE_PREFIX) {
+        set_profile(app, name);
+    } else if id == tray::PAUSE_ID {
+        dispatch(app, Event::PauseToggled);
+        refresh_menu(app);
+    } else if id == tray::SETTINGS_ID {
+        show_settings(app);
+    } else if id == tray::QUIT_ID {
+        app.exit(0);
+    }
+}
+
 #[tauri::command]
 fn accept_break(app: AppHandle) {
     dispatch(&app, Event::Accept);
@@ -231,6 +328,7 @@ fn escape_break(app: AppHandle) {
 #[tauri::command]
 fn toggle_pause(app: AppHandle) {
     dispatch(&app, Event::PauseToggled);
+    refresh_menu(&app);
 }
 
 #[tauri::command]
@@ -249,13 +347,24 @@ fn set_locale(app: AppHandle, locale: String) {
         let _ = core.config.save();
     }
 
-    // Republish so every window picks the new locale up at once.
+    // The tray menu is built in Rust, so it has to be rebuilt by hand.
+    refresh_menu(&app);
     dispatch(&app, Event::Tick);
 }
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .on_window_event(|window, event| {
+            // Closing settings must not take the app down with it — the tray is
+            // what owns the lifetime here.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "settings" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             // A broken config should not stop the app from nagging you.
             let config = Config::load_or_create().unwrap_or_default();
@@ -269,20 +378,25 @@ pub fn run() {
             let context_source = WindowsContext::new(&config.detection.games);
             let machine = Machine::new(SystemTime::now(), &profile);
 
+            let core = Core {
+                machine,
+                config,
+                profile: profile_name,
+                context_source,
+            };
+            let model = core.menu_model();
             app.manage(Shared {
-                core: Mutex::new(Core {
-                    machine,
-                    config,
-                    profile: profile_name,
-                    context_source,
-                }),
+                core: Mutex::new(core),
             });
 
-            // The whole app is this loop. Everything else reacts to it.
             let handle = app.handle().clone();
+            tray::create(&handle, &model, on_menu)?;
+
+            // The whole app is this loop. Everything else reacts to it.
+            let ticking = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(TICK);
-                dispatch(&handle, Event::Tick);
+                dispatch(&ticking, Event::Tick);
             });
 
             Ok(())
