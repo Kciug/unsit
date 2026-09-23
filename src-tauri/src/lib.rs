@@ -216,47 +216,83 @@ fn show_popup(app: &AppHandle) {
     let _ = window.set_always_on_top(true);
 }
 
-/// One overlay per monitor, rebuilt on every show so that plugging a display in
-/// or out between breaks cannot leave a gap.
-fn show_overlays(app: &AppHandle) {
-    let Ok(monitors) = app.available_monitors() else {
-        return;
-    };
+/// Creates one hidden overlay window per monitor, for any that are missing.
+///
+/// Called at startup and again before every break. Building a fullscreen
+/// webview is slow enough to be visible, and doing it while handling an effect
+/// means doing it from inside the event loop, so the windows are made once up
+/// front and only shown later.
+fn ensure_overlays(app: &AppHandle) -> tauri::Result<()> {
+    let monitors = app.available_monitors()?;
 
     for (index, monitor) in monitors.iter().enumerate() {
         let label = format!("overlay-{index}");
+        if app.get_webview_window(&label).is_some() {
+            continue;
+        }
 
-        let window = match app.get_webview_window(&label) {
-            Some(existing) => existing,
-            None => {
-                let built = WebviewWindowBuilder::new(
-                    app,
-                    &label,
-                    WebviewUrl::App("overlay/index.html".into()),
-                )
+        let window =
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::App("overlay/index.html".into()))
                 .decorations(false)
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .transparent(true)
-                .shadow(false)
                 // Taking focus is not needed to be seen, and stealing it from a
                 // game is exactly the sort of thing that gets an app deleted.
                 .focused(false)
                 .visible(false)
-                .build();
+                .build()?;
 
-                match built {
-                    Ok(window) => window,
-                    Err(_) => continue,
-                }
-            }
+        place_overlay(&window, monitor);
+
+        #[cfg(debug_assertions)]
+        {
+            let origin = monitor.position();
+            let size = monitor.size();
+            eprintln!(
+                "[unsit] overlay {label} ready at {},{} ({}x{})",
+                origin.x, origin.y, size.width, size.height
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn place_overlay(window: &tauri::WebviewWindow, monitor: &tauri::Monitor) {
+    let origin = monitor.position();
+    let size = monitor.size();
+    let _ = window.set_position(PhysicalPosition::new(origin.x, origin.y));
+    let _ = window.set_size(PhysicalSize::new(size.width, size.height));
+}
+
+/// Covers every monitor. Repositions on each show, so plugging a display in or
+/// out between breaks cannot leave a gap.
+fn show_overlays(app: &AppHandle) {
+    // A monitor may have appeared since startup.
+    if let Err(error) = ensure_overlays(app) {
+        eprintln!("[unsit] could not create an overlay window: {error}");
+    }
+
+    let monitors = match app.available_monitors() {
+        Ok(monitors) => monitors,
+        Err(error) => {
+            eprintln!("[unsit] could not enumerate monitors: {error}");
+            return;
+        }
+    };
+
+    for (index, monitor) in monitors.iter().enumerate() {
+        let label = format!("overlay-{index}");
+        let Some(window) = app.get_webview_window(&label) else {
+            eprintln!("[unsit] overlay {label} is missing, nothing to show");
+            continue;
         };
 
-        let origin = monitor.position();
-        let size = monitor.size();
-        let _ = window.set_position(PhysicalPosition::new(origin.x, origin.y));
-        let _ = window.set_size(PhysicalSize::new(size.width, size.height));
-        let _ = window.show();
+        place_overlay(&window, monitor);
+        if let Err(error) = window.show() {
+            eprintln!("[unsit] could not show {label}: {error}");
+        }
         let _ = window.set_always_on_top(true);
     }
 }
@@ -414,6 +450,12 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tray::create(&handle, &model, on_menu)?;
+
+            // Built now rather than when a break starts: a fullscreen webview
+            // takes long enough to create that doing it on demand shows.
+            if let Err(error) = ensure_overlays(&handle) {
+                eprintln!("[unsit] could not create overlay windows: {error}");
+            }
 
             // The whole app is this loop. Everything else reacts to it.
             let ticking = app.handle().clone();
