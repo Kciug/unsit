@@ -8,9 +8,11 @@ Unsit is a lightweight Windows tray app that nags you into taking breaks. What s
 
 ## Repo status
 
-Scaffolded, with the state machine done and covered by 16 passing tests, but nothing is wired together yet: no tray, no timer loop, no Win32, and `lib.rs` still holds empty command stubs. Running the app gets you an empty settings window. `npm run check`, `npm run build`, `cargo test` and `cargo clippy` are all clean.
+End to end but not yet usable. The tick loop drives `engine::step` once a second, real `GetLastInputInfo` feeds it, effects open the popup and a per-monitor overlay, breaks count only while you are away, toasts fire, and stats land in `%APPDATA%\Unsit\stats.jsonl`. `npm run check`, `npm run build`, `cargo test` (16) and `cargo clippy` are all clean.
 
-Next up is `platform/`, which is where the first real Win32 calls land, and the tick loop in `lib.rs` that drives `engine::step`.
+Missing before it is worth using: **no tray**, so there is no way to pause, switch profile or quit short of killing the process, and the settings window is `visible: true` only because nothing else could reopen it. Also absent: call detection via the microphone (v0.2), the escape-hatch friction UI (the command fires instantly, with no hold or retype), and sound — `Effect::PlaySound` is deliberately a no-op rather than a placeholder chime.
+
+To watch a full cycle without waiting fifty minutes, set `interval_min = 1` and `break_min = 1` in `%APPDATA%\Unsit\config.toml`.
 
 The design doc lives at `docs/unsit-plan.md`, which is **gitignored and local-only** (Polish, personal working notes). Do not assume it is present; this file is the self-contained reference. When it is present, record design decisions there rather than creating new docs — it has a dated "Decyzje" log and an open-questions checklist.
 
@@ -47,12 +49,16 @@ src/                  # UI (Svelte 5 + TypeScript, one HTML entry per window)
   lib/commands.ts     # invoke wrappers
   settings/ popup/ overlay/
 src-tauri/src/
-  lib.rs              # Tauri builder, commands, windows
+  lib.rs              # Tauri builder, tick loop, commands, effect handling
   engine/             # state machine — pure logic, zero Win32
   platform/           # Win32: idle, fullscreen, monitors, microphone, lock
+  ui.rs               # UiState, the view model pushed to the windows
+  i18n.rs             # backend-owned strings (toasts, later the tray)
   config.rs           # TOML in %APPDATA%\Unsit\config.toml
   stats.rs            # append-only JSONL events
 ```
+
+`dispatch` in `lib.rs` is the one turn of the crank: observe context, step the engine, emit the new `UiState`, then run the effects. The lock is held only across the engine call, and effects are run through `run_on_main_thread` — Windows window operations driven from a worker thread are a reliable way to deadlock.
 
 Vite runs with `root: 'src'`, so dev URLs are `/popup/`, `/overlay/`, `/settings/` and match the paths in `tauri.conf.json`. That is also why the Svelte plugin is handed an explicit `configFile` — it would otherwise look for `svelte.config.js` inside `src/`.
 

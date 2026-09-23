@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Shared capability for every Unsit window",
   "windows": ["settings", "popup", "overlay-*"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "notification:default"]
 }

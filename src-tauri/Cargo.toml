@@ -19,6 +19,8 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_SystemInformation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_System_Shutdown"] }
+tauri-plugin-notification = "2.4.0"
 
 # Plugins from the v0.1 list (autostart, single-instance, notification,
 # global-shortcut) get added as they are wired up, so an unused dependency never
