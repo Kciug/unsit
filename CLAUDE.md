@@ -8,7 +8,7 @@ Unsit is a lightweight Windows tray app that nags you into taking breaks. What s
 
 ## Repo status
 
-Scaffolded, not yet working. The frontend builds and typechecks clean. The Rust side is a skeleton whose core functions are `todo!()`, and **it has never been compiled** — the toolchain was not installed when it was written, so expect it to need fixing on the first `cargo check`.
+Scaffolded, not yet working, but both halves are verified: `npm run check` and `npm run build` are clean, `cargo check` produces warnings only (all of them dead code, as expected for a skeleton), and `cargo test` runs four config tests. `engine::step` is still `todo!()` — the state machine is the next piece of work and nothing calls into it yet.
 
 The design doc lives at `docs/unsit-plan.md`, which is **gitignored and local-only** (Polish, personal working notes). Do not assume it is present; this file is the self-contained reference. When it is present, record design decisions there rather than creating new docs — it has a dated "Decyzje" log and an open-questions checklist.
 
@@ -68,6 +68,7 @@ Breaking any of these breaks the project at its foundation:
 - **Never touch game processes.** Game detection uses only the process list, `SHQueryUserNotificationState` and foreground-window geometry. No injection, no hooking — anti-cheat safety.
 - **Friction, not lockout.** An escape hatch (hold a button / retype a sentence) always exists and always lands in stats as a skipped break. Escalation is gradual — toast, popup, overlay, `LockWorkStation` (opt-in) — capped per profile by `max_escalation`.
 - **The backend owns the locale.** It lives in `config.toml` because the tray menu and toasts are built in Rust; the frontend mirrors whatever arrives in the state event. Never set the locale store directly as the source of truth.
+- **`config.toml` is written for a human, not for serde.** Durations are integers named by their unit (`interval_min`, `warning_sec`), never `std::time::Duration` — deriving `Serialize` on `Duration` turns every field into a `{ secs, nanos }` table, and this file is hand-edited until the settings UI lands in v0.3. `Profile` exposes `interval()`, `break_length()` and `snooze(used)` so the engine still works in `Duration`.
 
 `Suspended` (call detected) and `Paused` (manual) wrap the previous state in `resume_to` and are reachable from anywhere except `Break`. On exit: if the break is now overdue go to `Prompt`, otherwise restore the prior state.
 
