@@ -115,6 +115,14 @@ What cannot be simulated belongs on a manual checklist, not in automated tests: 
 
 `src-tauri/Cargo.toml` is the single source of truth. `tauri.conf.json` has no `version` field on purpose — Tauri falls back to the crate version, so the installer can never disagree with the tag. `package.json` carries a copy that nothing reads; the release workflow keeps it in step.
 
-Do not bump by hand. Run the **Release** workflow with a `bump` of `patch`, `minor` or `major`: it raises the version in `Cargo.toml` and `package.json`, refreshes `Cargo.lock`, commits, tags `v<version>`, then builds the installer and opens a draft release. A `bump` of `none` builds the installer and uploads it as a workflow artifact without releasing anything — that is how you test a real build.
+Do not bump by hand. Run the **Build** workflow and pick a `bump`:
 
-Pushing a `v*` tag by hand also builds a release, and then the tag is trusted to match what is in `Cargo.toml`.
+| `bump` | what happens |
+| --- | --- |
+| `none` | builds the installer and uploads it as a workflow artifact. Nothing is tagged or published — this is how you test a real build |
+| `current` | releases the version already in `Cargo.toml`, tagging this commit |
+| `patch` / `minor` / `major` | raises the version in `Cargo.toml` and `package.json`, refreshes `Cargo.lock`, commits, tags `v<version>`, then releases |
+
+Every release is a **draft**, so nothing is public until you say so. Pushing a `v*` tag by hand also builds a release, and then the tag is trusted to match `Cargo.toml`.
+
+The workflow is called Build, not Release, because it only sometimes releases — a name that promises one every run is how you end up wondering where the release went.
