@@ -84,3 +84,22 @@ export function formatDuration(totalSeconds: number): string {
   const seconds = safe % 60
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
+
+export interface ProfileSettings {
+  key: string
+  intervalMin: number
+  breakMin: number
+}
+
+/**
+ * Fetched once when the settings window opens, and again after an edit.
+ *
+ * Kept off the per-tick state event on purpose: profiles change when someone
+ * edits them, not sixty times a minute.
+ */
+export interface SettingsView {
+  locale: Locale
+  autostart: boolean
+  activeProfile: string
+  profiles: ProfileSettings[]
+}

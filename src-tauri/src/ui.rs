@@ -110,6 +110,48 @@ impl UiState {
     }
 }
 
+/// One editable profile, as the settings window sees it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileView {
+    pub key: String,
+    pub interval_min: u64,
+    pub break_min: u64,
+}
+
+/// A snapshot for the settings window.
+///
+/// Fetched once when that window opens rather than ridden along on the state
+/// event: the profiles change when someone edits them, not sixty times a
+/// minute, and `UiState` goes out on every tick to every window.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsView {
+    pub locale: Locale,
+    pub autostart: bool,
+    pub active_profile: String,
+    pub profiles: Vec<ProfileView>,
+}
+
+impl SettingsView {
+    pub fn build(config: &Config, active: &str) -> Self {
+        Self {
+            locale: config.general.locale,
+            autostart: config.general.autostart,
+            active_profile: active.to_owned(),
+            profiles: config
+                .profiles
+                .iter()
+                .map(|(key, profile)| ProfileView {
+                    key: key.clone(),
+                    interval_min: profile.interval_min,
+                    break_min: profile.break_min,
+                })
+                .collect(),
+        }
+    }
+}
+
 fn remaining(deadline: Timestamp, now: Timestamp) -> u64 {
     deadline
         .duration_since(now)

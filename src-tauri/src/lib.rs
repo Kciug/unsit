@@ -17,7 +17,7 @@ use tauri_plugin_notification::NotificationExt;
 use config::{Config, Locale, Profile};
 use engine::{Effect, Event, Machine, Policy, State};
 use platform::{ContextSource, WindowsContext};
-use ui::{StateKind, UiState, STATE_EVENT};
+use ui::{SettingsView, StateKind, UiState, STATE_EVENT};
 
 const TICK: Duration = Duration::from_secs(1);
 /// Gap between the popup and the corner of the screen, in logical pixels.
@@ -436,6 +436,54 @@ fn toggle_pause(app: AppHandle) {
 }
 
 #[tauri::command]
+fn get_settings(app: AppHandle) -> SettingsView {
+    let shared = app.state::<Shared>();
+    let core = lock(&shared);
+    SettingsView::build(&core.config, &core.profile)
+}
+
+/// Bounds for the two numbers the settings window can change.
+///
+/// Not paranoia: a zero-minute interval would fire a break every tick, and the
+/// settings window is the one place a typo turns straight into behaviour.
+const MIN_MINUTES: u64 = 1;
+const MAX_INTERVAL_MIN: u64 = 480;
+const MAX_BREAK_MIN: u64 = 120;
+
+#[tauri::command]
+fn set_profile_times(app: AppHandle, profile: String, interval_min: u64, break_min: u64) {
+    let restarted = {
+        let shared = app.state::<Shared>();
+        let mut core = lock(&shared);
+
+        let Some(entry) = core.config.profiles.get_mut(&profile) else {
+            return;
+        };
+        entry.interval_min = interval_min.clamp(MIN_MINUTES, MAX_INTERVAL_MIN);
+        entry.break_min = break_min.clamp(MIN_MINUTES, MAX_BREAK_MIN);
+
+        let _ = core.config.save();
+
+        // Editing the profile you are currently in restarts the cycle, the same
+        // rule as switching modes. Carrying the old deadline into a new
+        // interval is the confusing option in both directions.
+        if profile == core.profile {
+            if let Some(updated) = core.profile() {
+                core.machine = Machine::new(SystemTime::now(), &updated);
+            }
+            true
+        } else {
+            false
+        }
+    };
+
+    if restarted {
+        hide_all(&app);
+    }
+    dispatch(&app, Event::Tick);
+}
+
+#[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) {
     {
         let shared = app.state::<Shared>();
@@ -543,7 +591,9 @@ pub fn run() {
             escape_break,
             toggle_pause,
             set_locale,
-            set_autostart
+            set_autostart,
+            get_settings,
+            set_profile_times
         ])
         .run(tauri::generate_context!())
         .expect("error while running Unsit");

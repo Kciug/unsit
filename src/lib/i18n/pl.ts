@@ -17,7 +17,12 @@ export const pl: Dict = {
   'overlay.escapeType': 'Przepisz zdanie, żeby pominąć',
 
   'settings.title': 'Ustawienia Unsit',
-  'settings.notImplemented': 'Jeszcze nie zrobione — na razie edytuj config.toml ręcznie.',
+  'settings.modes': 'Tryby',
+  'settings.interval': 'Interwał',
+  'settings.break': 'Przerwa',
+  'settings.minutes': 'min',
+  'settings.more': 'Reszta ustawień siedzi w config.toml.',
+  'settings.general': 'Ogólne',
   'settings.language': 'Język',
   'settings.autostart': 'Uruchamiaj z Windowsem',
 

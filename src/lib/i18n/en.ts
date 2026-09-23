@@ -15,7 +15,12 @@ export const en = {
   'overlay.escapeType': 'Type the sentence to skip',
 
   'settings.title': 'Unsit settings',
-  'settings.notImplemented': 'Not built yet — edit config.toml by hand for now.',
+  'settings.modes': 'Modes',
+  'settings.interval': 'Interval',
+  'settings.break': 'Break',
+  'settings.minutes': 'min',
+  'settings.more': 'Everything else lives in config.toml.',
+  'settings.general': 'General',
   'settings.language': 'Language',
   'settings.autostart': 'Start with Windows',
 

@@ -3,9 +3,17 @@ name: Release
 on:
   push:
     tags: ['v*']
-  # Manual runs build the installer and upload it as an artifact without
-  # publishing anything, which is the cheap way to check bundling still works.
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Raise the version, tag it and publish a draft release
+        type: choice
+        default: none
+        options:
+          - none
+          - patch
+          - minor
+          - major
 
 jobs:
   build:
@@ -28,19 +36,73 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # Cargo.toml is the single source of truth for the version. tauri.conf.json
+      # deliberately has no version field, so it cannot drift from this one.
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          bump='${{ inputs.bump }}'
+          if [ "$bump" = "none" ]; then
+            echo "Building without releasing."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          current=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          IFS='.' read -r major minor patch <<< "$current"
+
+          case "$bump" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          next="$major.$minor.$patch"
+          echo "Bumping $current to $next"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=v$next" >> "$GITHUB_OUTPUT"
+
+      - name: Bump, commit and tag
+        if: ${{ steps.version.outputs.next != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          next='${{ steps.version.outputs.next }}'
+
+          # Only the first version line, which is the one under [package].
+          sed -i "0,/^version = \".*\"$/s//version = \"$next\"/" src-tauri/Cargo.toml
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$next';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          # Cargo.lock carries the version too, and a stale lock dirties the
+          # next local build for no reason.
+          cargo update --manifest-path src-tauri/Cargo.toml --workspace
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am 'Release ${{ steps.version.outputs.tag }}'
+          git tag '${{ steps.version.outputs.tag }}'
+          # HEAD is detached after checkout, so name the branch explicitly.
+          git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build the installer
         uses: tauri-apps/tauri-action@v1
-        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Empty on a manual run, which makes the action build without
-          # creating a release.
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: Unsit ${{ github.ref_name }}
+          # Empty when nothing is being released, which makes the action build
+          # without creating one.
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: Unsit ${{ steps.version.outputs.tag }}
           releaseBody: |
             Windows installer. Unsigned, so SmartScreen will warn the first time —
             "More info" then "Run anyway".
@@ -48,7 +110,7 @@ jobs:
           # anyone can download it.
           releaseDraft: true
           prerelease: false
-          # On a manual run there is no release to attach to, so keep the
-          # installer as a workflow artifact instead. The action finds the
-          # bundle itself, which beats hardcoding a path under target/.
-          uploadWorkflowArtifacts: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          # With no release to attach to, keep the installer as a workflow
+          # artifact. The action finds the bundle itself, which beats hardcoding
+          # a path under target/.
+          uploadWorkflowArtifacts: ${{ steps.version.outputs.tag == '' }}

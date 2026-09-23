@@ -110,3 +110,11 @@ Config is TOML at `%APPDATA%\Unsit\config.toml`; stats are append-only JSONL, wi
 State logic is unit-tested against a fake clock and fake idle source. Cases that matter: input during a break pauses the counter, idle ≥ break length while working resets the cycle and logs a natural break, exhausted snoozes promote the popup to an overlay with no snooze option, waking after 2h of sleep counts as a break, a call during `Prompt` suspends and returns to `Prompt`, the "finish the match" extension is available exactly once per cycle, and the gaming session limit forces a long break regardless of snoozes.
 
 What cannot be simulated belongs on a manual checklist, not in automated tests: exclusive fullscreen vs borderless, two monitors at different DPI scaling, sleeping mid-break, unplugging a monitor while the overlay is up, and a Teams/Discord call arriving during `Warning` and `Prompt`.
+
+## Versioning
+
+`src-tauri/Cargo.toml` is the single source of truth. `tauri.conf.json` has no `version` field on purpose — Tauri falls back to the crate version, so the installer can never disagree with the tag. `package.json` carries a copy that nothing reads; the release workflow keeps it in step.
+
+Do not bump by hand. Run the **Release** workflow with a `bump` of `patch`, `minor` or `major`: it raises the version in `Cargo.toml` and `package.json`, refreshes `Cargo.lock`, commits, tags `v<version>`, then builds the installer and opens a draft release. A `bump` of `none` builds the installer and uploads it as a workflow artifact without releasing anything — that is how you test a real build.
+
+Pushing a `v*` tag by hand also builds a release, and then the tag is trusted to match what is in `Cargo.toml`.

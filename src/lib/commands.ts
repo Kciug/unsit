@@ -1,3 +1,4 @@
+import type { SettingsView } from './state'
 import { invoke } from '@tauri-apps/api/core'
 
 // Every one of these is a request, not a state change. The backend decides what
@@ -22,3 +23,18 @@ export const escapeBreak = () => call('escape_break')
 export const togglePause = () => call('toggle_pause')
 export const setLocale = (locale: string) => call('set_locale', { locale })
 export const setAutostart = (enabled: boolean) => call('set_autostart', { enabled })
+
+/** Reads a value back, rather than firing and forgetting like the rest. */
+async function read<T>(command: string): Promise<T | null> {
+  try {
+    return await invoke<T>(command)
+  } catch (error) {
+    console.error(`[unsit] ${command} failed`, error)
+    return null
+  }
+}
+
+export const getSettings = () => read<SettingsView>('get_settings')
+
+export const setProfileTimes = (profile: string, intervalMin: number, breakMin: number) =>
+  call('set_profile_times', { profile, intervalMin, breakMin })

@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Unsit",
-  "version": "0.1.0",
   "identifier": "com.kciug.unsit",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -16,7 +15,7 @@
         "title": "Unsit",
         "url": "settings/index.html",
         "width": 520,
-        "height": 420,
+        "height": 560,
         "resizable": true,
         "visible": false
       },
