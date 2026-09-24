@@ -6,6 +6,7 @@
     setAutostart,
     setLocale,
     setProfileTimes,
+    setSound,
   } from '../lib/commands'
   import { uiState, type ProfileSettings, type SettingsView } from '../lib/state'
 
@@ -66,6 +67,20 @@
       />
       {$t('settings.autostart')}
     </label>
+
+    {#if settings}
+      <label class="checkbox">
+        <input
+          type="checkbox"
+          checked={settings.sound}
+          onchange={async (event) => {
+            await setSound(event.currentTarget.checked)
+            await refresh()
+          }}
+        />
+        {$t('settings.sound')}
+      </label>
+    {/if}
   </section>
 
   {#if settings}

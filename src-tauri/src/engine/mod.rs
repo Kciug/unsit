@@ -465,10 +465,16 @@ fn enter_prompt(machine: &mut Machine, now: Timestamp, policy: &Policy, effects:
     // A profile capped at toast never opens a window at all.
     if ceiling(machine, policy).rank() >= Escalation::Popup.rank() {
         effects.push(Effect::ShowPopup);
-        effects.push(Effect::PlaySound);
     } else {
         effects.push(Effect::ShowToast);
     }
+
+    // Outside the branch on purpose. The capped case is exclusive fullscreen,
+    // where the toast is discarded by Windows and no window of ours can be
+    // drawn — so sound is the only thing that gets through, and emitting it
+    // only alongside a visible popup had it firing exactly where it was least
+    // needed and silent where it was the last resort.
+    effects.push(Effect::PlaySound);
 }
 
 /// The break has been served. The overlay stays up until it is dismissed.

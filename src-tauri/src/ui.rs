@@ -129,6 +129,7 @@ pub struct ProfileView {
 pub struct SettingsView {
     pub locale: Locale,
     pub autostart: bool,
+    pub sound: bool,
     pub active_profile: String,
     pub profiles: Vec<ProfileView>,
 }
@@ -138,6 +139,7 @@ impl SettingsView {
         Self {
             locale: config.general.locale,
             autostart: config.general.autostart,
+            sound: config.general.sound,
             active_profile: active.to_owned(),
             profiles: config
                 .profiles

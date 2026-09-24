@@ -36,5 +36,7 @@ async function read<T>(command: string): Promise<T | null> {
 
 export const getSettings = () => read<SettingsView>('get_settings')
 
+export const setSound = (enabled: boolean) => call('set_sound', { enabled })
+
 export const setProfileTimes = (profile: string, intervalMin: number, breakMin: number) =>
   call('set_profile_times', { profile, intervalMin, breakMin })

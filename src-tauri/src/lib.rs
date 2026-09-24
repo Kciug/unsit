@@ -49,6 +49,16 @@ struct Shared {
     core: Mutex<Core>,
 }
 
+/// What the effect handlers need beyond the effect itself.
+///
+/// Read off the config while the lock is held, then carried out to the main
+/// thread — the handlers must never reach back for it.
+struct Render {
+    profile: String,
+    locale: Locale,
+    sound: bool,
+}
+
 /// Locks the shared state, recovering from a poisoned mutex.
 ///
 /// A panic in one tick should cost that tick, not brick the app. With a plain
@@ -80,7 +90,7 @@ fn dispatch(app: &AppHandle, event: Event) {
     #[cfg(debug_assertions)]
     let user_driven = !matches!(event, Event::Tick);
 
-    let (effects, snapshot, profile_name) = {
+    let (effects, snapshot, render) = {
         let mut core = lock(&shared);
         let Some(profile) = core.profile() else {
             return;
@@ -120,7 +130,13 @@ fn dispatch(app: &AppHandle, event: Event) {
             idle,
         );
 
-        (effects, snapshot, core.profile.clone())
+        let render = Render {
+            profile: core.profile.clone(),
+            locale: core.config.general.locale,
+            sound: core.config.general.sound,
+        };
+
+        (effects, snapshot, render)
     };
 
     // A dead button and a button the machine deliberately ignores look the
@@ -136,26 +152,29 @@ fn dispatch(app: &AppHandle, event: Event) {
     let locale = snapshot.locale;
     let _ = app.emit(STATE_EVENT, &snapshot);
 
-    let tip = tooltip(&snapshot, &i18n::profile_name(locale, &profile_name));
+    let tip = tooltip(&snapshot, &i18n::profile_name(locale, &render.profile));
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         tray::set_tooltip(&handle, &tip);
         for effect in effects {
-            apply(&handle, effect, &profile_name, locale);
+            apply(&handle, effect, &render);
         }
     });
 }
 
-fn apply(app: &AppHandle, effect: Effect, profile: &str, locale: Locale) {
+fn apply(app: &AppHandle, effect: Effect, render: &Render) {
     match effect {
-        Effect::ShowToast => show_toast(app, locale),
+        Effect::ShowToast => show_toast(app, render.locale),
         Effect::ShowPopup => show_popup(app),
         Effect::ShowOverlay => show_overlays(app),
         Effect::HideAll => hide_all(app),
-        // Sound is still unwired; silence beats a placeholder chime.
-        Effect::PlaySound => {}
+        Effect::PlaySound => {
+            if render.sound {
+                platform::play_notification_sound();
+            }
+        }
         Effect::LockScreen => platform::lock_workstation(),
-        Effect::Log(stat) => stats::record(stat, profile),
+        Effect::Log(stat) => stats::record(stat, &render.profile),
     }
 }
 
@@ -493,6 +512,17 @@ fn set_profile_times(app: AppHandle, profile: String, interval_min: u64, break_m
 }
 
 #[tauri::command]
+fn set_sound(app: AppHandle, enabled: bool) {
+    {
+        let shared = app.state::<Shared>();
+        let mut core = lock(&shared);
+        core.config.general.sound = enabled;
+        let _ = core.config.save();
+    }
+    dispatch(&app, Event::Tick);
+}
+
+#[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) {
     {
         let shared = app.state::<Shared>();
@@ -602,7 +632,8 @@ pub fn run() {
             set_locale,
             set_autostart,
             get_settings,
-            set_profile_times
+            set_profile_times,
+            set_sound
         ])
         .run(tauri::generate_context!())
         .expect("error while running Unsit");

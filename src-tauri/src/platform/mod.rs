@@ -7,12 +7,13 @@
 use std::mem::size_of;
 use std::time::Duration;
 
-use windows::core::PWSTR;
+use windows::core::{w, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     MONITOR_DEFAULTTOPRIMARY,
 };
+use windows::Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC, SND_NODEFAULT};
 use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::System::Threading::{
@@ -245,6 +246,36 @@ pub fn raise_above_everything(hwnd: isize, x: i32, y: i32, width: i32, height: i
             height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         );
+    }
+}
+
+/// Plays the system notification sound.
+///
+/// A system alias rather than a bundled file: it costs nothing in the binary,
+/// it already matches whatever sound scheme the user chose, and someone who
+/// has turned system sounds off gets silence, which is the answer they asked
+/// for. Audio is also the only channel that survives an exclusive-fullscreen
+/// game, where no window of ours can be drawn and no notification is delivered.
+pub fn play_notification_sound() {
+    // SAFETY: both arguments are static wide strings owned by the binary, and
+    // SND_ASYNC means the call returns without blocking the caller.
+    unsafe {
+        // The modern toast sound, as used by notifications themselves.
+        let played = PlaySoundW(
+            w!("Notification.Default"),
+            None,
+            SND_ALIAS | SND_ASYNC | SND_NODEFAULT,
+        )
+        .as_bool();
+
+        // Older schemes do not define it; this one has existed forever.
+        if !played {
+            let _ = PlaySoundW(
+                w!("SystemAsterisk"),
+                None,
+                SND_ALIAS | SND_ASYNC | SND_NODEFAULT,
+            );
+        }
     }
 }
 

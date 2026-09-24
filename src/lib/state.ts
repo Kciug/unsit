@@ -100,6 +100,7 @@ export interface ProfileSettings {
 export interface SettingsView {
   locale: Locale
   autostart: boolean
+  sound: boolean
   activeProfile: string
   profiles: ProfileSettings[]
 }

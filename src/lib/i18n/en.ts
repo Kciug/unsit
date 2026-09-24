@@ -23,6 +23,7 @@ export const en = {
   'settings.general': 'General',
   'settings.language': 'Language',
   'settings.autostart': 'Start with Windows',
+  'settings.sound': 'Play a sound when a break is due',
 
   'tray.pause': 'Pause',
   'tray.resume': 'Resume',

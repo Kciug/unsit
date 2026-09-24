@@ -120,6 +120,13 @@ pub struct General {
     /// remember to launch is a break reminder that never runs.
     #[serde(default = "default_autostart")]
     pub autostart: bool,
+    /// Play a sound when a break falls due.
+    ///
+    /// On by default, and the one setting worth thinking twice before turning
+    /// off: in an exclusive-fullscreen game it is the only signal that can
+    /// reach you at all.
+    #[serde(default = "default_sound")]
+    pub sound: bool,
 }
 
 impl General {
@@ -175,6 +182,10 @@ fn default_locale() -> Locale {
 }
 
 fn default_autostart() -> bool {
+    true
+}
+
+fn default_sound() -> bool {
     true
 }
 
@@ -242,6 +253,7 @@ impl Default for Config {
                 idle_threshold_sec: 5,
                 locale: Locale::En,
                 autostart: true,
+                sound: true,
             },
             profiles,
             detection: Detection::default(),

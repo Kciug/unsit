@@ -25,6 +25,7 @@ export const pl: Dict = {
   'settings.general': 'Ogólne',
   'settings.language': 'Język',
   'settings.autostart': 'Uruchamiaj z Windowsem',
+  'settings.sound': 'Dźwięk, gdy zaczyna się przerwa',
 
   'tray.pause': 'Pauza',
   'tray.resume': 'Wznów',

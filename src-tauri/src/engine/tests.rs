@@ -434,6 +434,13 @@ fn an_exclusive_fullscreen_game_gets_nothing_but_a_toast() {
     );
     assert!(effects.contains(&Effect::ShowToast));
 
+    // The toast is thrown away by Windows here and no window can be drawn, so
+    // sound is the only thing that reaches the player at all.
+    assert!(
+        effects.contains(&Effect::PlaySound),
+        "sound is the last channel left in exclusive fullscreen: {effects:?}"
+    );
+
     let span = profile.prompt_timeout() + SECOND;
     let (machine, effects, _) = advance(machine, now, span, Duration::ZERO, &policy);
     assert!(!effects.contains(&Effect::ShowOverlay));
