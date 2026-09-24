@@ -126,6 +126,10 @@ jobs:
           # anyone can download it.
           releaseDraft: true
           prerelease: false
+          # A release once failed on "other side closed" talking to the GitHub
+          # API, after the installer had already been built — half an hour of
+          # compiling thrown away by a blip. Retrying costs nothing.
+          retryAttempts: 3
           # With no release to attach to, keep the installer as a workflow
           # artifact. The action finds the bundle itself, which beats hardcoding
           # a path under target/.
