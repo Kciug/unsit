@@ -1,6 +1,6 @@
 {
   "name": "unsit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A break reminder for Windows that knows whether you're working or gaming",
   "license": "MIT",
   "type": "module",
