@@ -8,11 +8,13 @@ Unsit is a lightweight Windows tray app that nags you into taking breaks. What s
 
 ## Repo status
 
-v0.1 is complete. It lives in the tray, the menu switches between Work, Gaming and Chill, pause works, and the tick loop drives `engine::step` once a second off real `GetLastInputInfo`. Popups and per-monitor overlays appear over the taskbar, breaks count only while you are away, a finished break waits to be dismissed, leaving early costs a five-second hold, toasts fire, stats land in `%APPDATA%\Unsit\stats.jsonl`, and there is autostart plus a single-instance guard. `npm run check`, `npm run build`, `cargo test` (17) and `cargo clippy` are all clean.
+Working and in daily use. It lives in the tray, a left click opens a flyout and a right click the menu, modes are editable and can be added or removed, the tick loop drives `engine::step` once a second off real `GetLastInputInfo`, and a single shortcut pulls a waiting prompt to the front or peeks at the countdown. Popups, per-monitor overlays and a transient notice window all draw over the taskbar and over a borderless game; breaks count only while you are away; a finished break waits to be dismissed; leaving early costs a five-second hold. Stats land in `%APPDATA%\Unsit\stats.jsonl`. `npm run check`, `npm run build`, `cargo test` (20) and `cargo clippy` are all clean.
 
-Known and deferred: the overlay still reads as a window laid over the desktop rather than a dimmed screen. Cosmetic only, tracked as a bug in Sync (project Unsit).
+Work is tracked in Sync (project Unsit, key prefix `UNS`), not in this file.
 
-Deliberately absent: sound (`Effect::PlaySound` is a no-op, because silence beats a placeholder chime), the `type` escape method (falls back to holding, so no button promises what it will not do), automatic profile switching on game detection (v0.2 — detection works and already caps escalation to a toast mid-game, but switching profiles mid-cycle raises a deadline question worth settling on its own), and microphone-based call detection (v0.3+).
+Deliberately absent: the `type` escape method (falls back to holding, so no button promises what it will not do), automatic profile switching on game detection (detection works and already caps escalation mid-game, but switching profiles mid-cycle raises a deadline question worth settling on its own), microphone-based call detection, and renaming a mode — the key is the name, so a rename has to move the active mode and the startup default with it.
+
+**Exclusive fullscreen gets sound and nothing else.** No window of ours can be drawn over it — one placed there alt-tabs the game instead of covering it — and Windows discards notifications while it runs. Discord manages it by injecting into the game process, which this project will not do, so audio is the whole channel. Do not "fix" this with a window.
 
 To watch a full cycle without waiting fifty minutes, set `interval_min = 1` and `break_min = 1` in `%APPDATA%\Unsit\config.toml`.
 
@@ -63,7 +65,8 @@ src/                  # UI (Svelte 5 + TypeScript, one HTML entry per window)
   lib/i18n/           # en.ts / pl.ts dictionaries, locale store, t()
   lib/state.ts        # UiState view model + the backend state event
   lib/commands.ts     # invoke wrappers
-  settings/ popup/ overlay/
+  lib/DurationField.svelte
+  settings/ popup/ overlay/ notice/ flyout/
 src-tauri/src/
   lib.rs              # Tauri builder, tick loop, commands, effect handling
   engine/             # state machine — pure logic, zero Win32
@@ -101,7 +104,9 @@ Breaking any of these breaks the project at its foundation:
 
 `Suspended` (call detected) and `Paused` (manual) wrap the previous state in `resume_to` and are reachable from anywhere except `Break`. On exit: if the break is now overdue go to `Prompt`, otherwise restore the prior state.
 
-Three window kinds with different requirements: `settings` (ordinary), `popup` (frameless, topmost, bottom-right), `overlay` (**one per monitor**, transparent, fullscreen, topmost, off the taskbar). The overlay does not need to steal focus to work, and it cannot paint over an exclusive-fullscreen game — which is why Gaming mode only fires a toast while a game is running.
+Five window kinds. `settings` is an ordinary window that hides rather than closes. `popup` is frameless and bottom-right. `notice` is the transient one, top-right, standing in for a Windows notification while a game is running. `overlay` is **one per monitor**, transparent and fullscreen, and is created at startup rather than when a break begins. `flyout` is the tray panel.
+
+Two rules they share. Anything meant to appear over a borderless game must be re-raised with `platform::raise_above_everything` on every show — `always_on_top` alone loses to both the taskbar and a fullscreen game, and this has already been the cause of two bugs. And **only the flyout takes focus**: every other window is focus-free so it can never pull someone out of a game, while the flyout needs focus because losing it is how a tray panel knows to close.
 
 Config is TOML at `%APPDATA%\Unsit\config.toml`; stats are append-only JSONL, with SQLite deferred until queries actually hurt.
 
