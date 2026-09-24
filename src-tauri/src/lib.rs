@@ -90,13 +90,30 @@ fn lock(shared: &Shared) -> std::sync::MutexGuard<'_, Core> {
     }
 }
 
+/// The shared state, if setup has got that far.
+///
+/// `try_state` rather than `state`, which panics outright when the state is not
+/// managed yet. Windows exist and the tray is live before setup finishes, so a
+/// click or a shortcut landing in that gap would take the whole app down rather
+/// than doing nothing — and in a release build with `panic = "abort"` that is a
+/// silent disappearance, with only an event-log entry to show for it.
+fn shared<'a>(app: &'a AppHandle, who: &str) -> Option<tauri::State<'a, Shared>> {
+    let state = app.try_state::<Shared>();
+    if state.is_none() {
+        eprintln!("[unsit] {who} ran before the state was ready");
+    }
+    state
+}
+
 /// One turn of the machine: observe, step, publish, act.
 ///
 /// The lock is held only for the engine call. Everything that touches a window
 /// runs afterwards on the main thread, because Windows window operations driven
 /// from a worker are a reliable way to deadlock.
 fn dispatch(app: &AppHandle, event: Event) {
-    let shared = app.state::<Shared>();
+    let Some(shared) = shared(app, "dispatch") else {
+        return;
+    };
     let now = SystemTime::now();
     let idle = platform::idle_duration();
 
@@ -301,7 +318,9 @@ fn show_notice(app: &AppHandle, notice: Notice) {
         platform::raise_above_everything(handle.0 as isize, x, y, width, height);
     }
 
-    let shared = app.state::<Shared>();
+    let Some(shared) = shared(app, "show_notice") else {
+        return;
+    };
     let mut core = lock(&shared);
     core.notice_until = SystemTime::now().checked_add(Duration::from_secs(NOTICE_SECONDS));
 }
@@ -321,7 +340,9 @@ fn toggle_flyout(app: &AppHandle) {
     }
 
     let view = {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(app, "toggle_flyout") else {
+            return;
+        };
         let core = lock(&shared);
         let locale = core.config.general.locale;
 
@@ -553,7 +574,9 @@ fn apply_autostart(app: &AppHandle, enabled: bool) {
 /// answered, and the rest of the time it says how long is left. Three separate
 /// shortcuts in an app this small is three things to remember.
 fn on_hotkey(app: &AppHandle) {
-    let shared = app.state::<Shared>();
+    let Some(shared) = shared(app, "on_hotkey") else {
+        return;
+    };
 
     let (context, prompt_waiting, line) = {
         let core = lock(&shared);
@@ -623,7 +646,9 @@ fn show_settings(app: &AppHandle) {
 /// deliberate action in a tool you point at yourself.
 fn set_profile(app: &AppHandle, name: &str) {
     let model = {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(app, "set_profile") else {
+            return;
+        };
         let mut core = lock(&shared);
         if !core.config.profiles.contains_key(name) {
             return;
@@ -644,7 +669,9 @@ fn set_profile(app: &AppHandle, name: &str) {
 
 fn refresh_menu(app: &AppHandle) {
     let model = {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(app, "refresh_menu") else {
+            return;
+        };
         let core = lock(&shared);
         core.menu_model()
     };
@@ -707,11 +734,18 @@ fn open_settings(app: AppHandle) {
     show_settings(&app);
 }
 
+/// `Option` rather than a made-up default: the settings window already handles
+/// a null, and inventing a snapshot would show someone settings that are not
+/// theirs.
 #[tauri::command]
-fn get_settings(app: AppHandle) -> SettingsView {
-    let shared = app.state::<Shared>();
+fn get_settings(app: AppHandle) -> Option<SettingsView> {
+    let shared = shared(&app, "get_settings")?;
     let core = lock(&shared);
-    SettingsView::build(&core.config, &core.profile, core.hotkey_registered)
+    Some(SettingsView::build(
+        &core.config,
+        &core.profile,
+        core.hotkey_registered,
+    ))
 }
 
 /// Bounds for anything the settings window can set.
@@ -771,7 +805,9 @@ fn apply_edit(profile: &mut Profile, edit: ProfileEdit) {
 #[tauri::command]
 fn save_profile(app: AppHandle, profile: String, edit: ProfileEdit) {
     let restarted = {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(&app, "save_profile") else {
+            return;
+        };
         let mut core = lock(&shared);
 
         let Some(entry) = core.config.profiles.get_mut(&profile) else {
@@ -811,7 +847,7 @@ fn add_profile(app: AppHandle, key: String) -> Option<String> {
     }
 
     let model = {
-        let shared = app.state::<Shared>();
+        let shared = shared(&app, "add_profile")?;
         let mut core = lock(&shared);
 
         if core.config.profiles.contains_key(&key) {
@@ -837,7 +873,9 @@ fn add_profile(app: AppHandle, key: String) -> Option<String> {
 #[tauri::command]
 fn remove_profile(app: AppHandle, key: String) {
     let (model, switched) = {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(&app, "remove_profile") else {
+            return;
+        };
         let mut core = lock(&shared);
 
         // Never the last one. An app with no modes has nothing to count down.
@@ -882,7 +920,9 @@ fn remove_profile(app: AppHandle, key: String) {
 #[tauri::command]
 fn set_sound(app: AppHandle, enabled: bool) {
     {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(&app, "set_sound") else {
+            return;
+        };
         let mut core = lock(&shared);
         core.config.general.sound = enabled;
         let _ = core.config.save();
@@ -893,7 +933,9 @@ fn set_sound(app: AppHandle, enabled: bool) {
 #[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) {
     {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(&app, "set_autostart") else {
+            return;
+        };
         let mut core = lock(&shared);
         core.config.general.autostart = enabled;
         let _ = core.config.save();
@@ -911,7 +953,9 @@ fn set_locale(app: AppHandle, locale: String) {
     };
 
     {
-        let shared = app.state::<Shared>();
+        let Some(shared) = shared(&app, "set_locale") else {
+            return;
+        };
         let mut core = lock(&shared);
         core.config.general.locale = parsed;
         let _ = core.config.save();
@@ -1019,7 +1063,9 @@ pub fn run() {
             // Recorded rather than only logged: in a release build nobody ever
             // sees stderr, and a shortcut that silently does nothing is worse
             // than one that says it is unavailable.
-            lock(&app.state::<Shared>()).hotkey_registered = claimed;
+            if let Some(state) = shared(&handle, "setup") {
+                lock(&state).hotkey_registered = claimed;
+            }
 
             // Built now rather than when a break starts: a fullscreen webview
             // takes long enough to create that doing it on demand shows.
