@@ -1,6 +1,6 @@
 [package]
 name = "unsit"
-version = "0.1.1"
+version = "0.2.0"
 description = "A break reminder for Windows that knows whether you're working or gaming"
 authors = ["Rafał Skrzypczyk"]
 license = "MIT"
