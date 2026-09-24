@@ -45,3 +45,7 @@ export const saveProfile = (profile: string, edit: ProfileEdit) =>
 export const addProfile = (key: string) => read<string | null>('add_profile', { key })
 
 export const removeProfile = (key: string) => call('remove_profile', { key })
+
+export const switchMode = (key: string) => call('switch_mode', { key })
+export const closeFlyout = () => call('close_flyout')
+export const openSettings = () => call('open_settings')

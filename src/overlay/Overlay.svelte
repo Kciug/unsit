@@ -75,7 +75,10 @@
 </main>
 
 <style>
+  :global(html),
   :global(body) {
+    height: 100%;
+    margin: 0;
     background: transparent;
     overflow: hidden;
   }
@@ -86,7 +89,11 @@
     align-items: center;
     justify-content: center;
     gap: 1rem;
-    height: 100vh;
+    /* Pinned to all four edges rather than sized with 100vh. At fractional DPI
+       scaling the viewport height and the window height disagree by a pixel,
+       and that pixel shows as a transparent strip along the bottom. */
+    position: fixed;
+    inset: 0;
     background: rgba(12, 14, 18, 0.88);
     user-select: none;
   }

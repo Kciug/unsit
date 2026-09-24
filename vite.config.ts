@@ -33,6 +33,7 @@ export default defineConfig({
         popup: resolve(here, 'src/popup/index.html'),
         overlay: resolve(here, 'src/overlay/index.html'),
         notice: resolve(here, 'src/notice/index.html'),
+        flyout: resolve(here, 'src/flyout/index.html'),
       },
     },
   },

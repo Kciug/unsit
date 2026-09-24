@@ -204,6 +204,27 @@ fn remaining(deadline: Timestamp, now: Timestamp) -> u64 {
 
 pub const NOTICE_EVENT: &str = "unsit://notice";
 
+pub const FLYOUT_EVENT: &str = "unsit://flyout";
+
+/// One selectable mode in the flyout, already named in the right language.
+#[derive(Debug, Clone, Serialize)]
+pub struct FlyoutMode {
+    pub key: String,
+    pub label: String,
+}
+
+/// What the tray flyout shows.
+///
+/// Pushed when it opens rather than polled: it is on screen for a few seconds
+/// at a time, and the countdown it shows comes from the state event like
+/// everywhere else.
+#[derive(Debug, Clone, Serialize)]
+pub struct FlyoutView {
+    pub modes: Vec<FlyoutMode>,
+    pub active: String,
+    pub paused: bool,
+}
+
 /// Text for the transient notice window.
 ///
 /// Already translated: that window stands in for a Windows notification while

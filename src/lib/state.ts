@@ -145,3 +145,27 @@ export const notice = readable<NoticePayload | null>(null, (set) => {
     void pending.then((unlisten) => unlisten()).catch(() => {})
   }
 })
+
+export interface FlyoutMode {
+  key: string
+  label: string
+}
+
+export interface FlyoutView {
+  modes: FlyoutMode[]
+  active: string
+  paused: boolean
+}
+
+export const FLYOUT_EVENT = 'unsit://flyout'
+
+/**
+ * Pushed when the tray panel opens rather than polled — it is on screen for a
+ * few seconds at a time, and its countdown comes from the state event anyway.
+ */
+export const flyout = readable<FlyoutView | null>(null, (set) => {
+  const pending = listen<FlyoutView>(FLYOUT_EVENT, (event) => set(event.payload))
+  return () => {
+    void pending.then((unlisten) => unlisten()).catch(() => {})
+  }
+})

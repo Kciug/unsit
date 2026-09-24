@@ -20,6 +20,20 @@
         "visible": false
       },
       {
+        "label": "flyout",
+        "title": "Unsit",
+        "url": "flyout/index.html",
+        "width": 260,
+        "height": 250,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false
+      },
+      {
         "label": "notice",
         "title": "Unsit",
         "url": "notice/index.html",

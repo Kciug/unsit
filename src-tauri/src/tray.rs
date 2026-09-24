@@ -5,7 +5,7 @@
 //! and keeps the check marks honest without tracking a pile of item handles.
 
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Wry};
 
 use crate::config::Locale;
@@ -71,9 +71,15 @@ pub fn build_menu(app: &AppHandle, model: &MenuModel) -> tauri::Result<Menu<Wry>
     )
 }
 
-pub fn create<F>(app: &AppHandle, model: &MenuModel, on_menu: F) -> tauri::Result<()>
+pub fn create<F, G>(
+    app: &AppHandle,
+    model: &MenuModel,
+    on_menu: F,
+    on_click: G,
+) -> tauri::Result<()>
 where
     F: Fn(&AppHandle, &str) + Send + Sync + 'static,
+    G: Fn(&AppHandle) + Send + Sync + 'static,
 {
     let menu = build_menu(app, model)?;
     let icon = app
@@ -85,7 +91,21 @@ where
         .icon(icon)
         .menu(&menu)
         .tooltip("Unsit")
+        // Left click belongs to the flyout; the menu stays on right click.
+        .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| on_menu(app, event.id.as_ref()))
+        .on_tray_icon_event(move |tray, event| {
+            // On the release, not the press: acting on the press leaves the
+            // click hitting whatever the flyout puts under the cursor.
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                on_click(tray.app_handle());
+            }
+        })
         .build(app)?;
 
     Ok(())

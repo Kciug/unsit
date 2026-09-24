@@ -17,7 +17,10 @@ use tauri_plugin_notification::NotificationExt;
 use config::{Config, Locale, Profile};
 use engine::{Context, Effect, Event, Machine, Policy, State};
 use platform::{ContextSource, WindowsContext};
-use ui::{Notice, ProfileEdit, SettingsView, StateKind, UiState, NOTICE_EVENT, STATE_EVENT};
+use ui::{
+    FlyoutMode, FlyoutView, Notice, ProfileEdit, SettingsView, StateKind, UiState, FLYOUT_EVENT,
+    NOTICE_EVENT, STATE_EVENT,
+};
 
 const TICK: Duration = Duration::from_secs(1);
 /// How long the notice window stays up before taking itself away.
@@ -303,6 +306,67 @@ fn show_notice(app: &AppHandle, notice: Notice) {
     core.notice_until = SystemTime::now().checked_add(Duration::from_secs(NOTICE_SECONDS));
 }
 
+/// The tray flyout: what a left click on the icon opens.
+///
+/// A second click closes it again, which is what every other tray panel on
+/// Windows does and what a hand reaches for without thinking.
+fn toggle_flyout(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("flyout") else {
+        return;
+    };
+
+    if window.is_visible().unwrap_or(false) {
+        let _ = window.hide();
+        return;
+    }
+
+    let view = {
+        let shared = app.state::<Shared>();
+        let core = lock(&shared);
+        let locale = core.config.general.locale;
+
+        FlyoutView {
+            modes: core
+                .config
+                .profiles
+                .keys()
+                .map(|key| FlyoutMode {
+                    key: key.clone(),
+                    label: i18n::profile_name(locale, key),
+                })
+                .collect(),
+            active: core.profile.clone(),
+            paused: matches!(core.machine.state, State::Paused { .. }),
+        }
+    };
+
+    let _ = app.emit_to("flyout", FLYOUT_EVENT, view);
+
+    // Bottom-right of the work area, which is where the tray is and where
+    // Windows puts its own flyouts.
+    if let (Some((_, _, right, bottom)), Ok(size)) =
+        (platform::primary_work_area(), window.outer_size())
+    {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let margin = (POPUP_MARGIN * scale) as i32;
+        let x = right - size.width as i32 - margin;
+        let y = bottom - size.height as i32 - margin;
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+
+    let _ = window.show();
+    let _ = window.set_always_on_top(true);
+    // Focused on purpose, unlike every other window here: losing focus is how
+    // it knows to close.
+    let _ = window.set_focus();
+}
+
+fn hide_flyout(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("flyout") {
+        let _ = window.hide();
+    }
+}
+
 fn hide_notice(app: &AppHandle) {
     let _ = app.emit_to("notice", NOTICE_EVENT, Option::<Notice>::None);
     if let Some(window) = app.get_webview_window("notice") {
@@ -362,6 +426,11 @@ fn ensure_overlays(app: &AppHandle) -> tauri::Result<()> {
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .transparent(true)
+                // A drop shadow around a transparent fullscreen window renders
+                // as a visible border — which is exactly what made the overlay
+                // read as a window laid over the desktop rather than a dimmed
+                // screen.
+                .shadow(false)
                 // Without this the edges stay grabbable even with no frame, so
                 // the overlay can be resized or shrugged off like any window.
                 .resizable(false)
@@ -622,6 +691,23 @@ fn toggle_pause(app: AppHandle) {
 }
 
 #[tauri::command]
+fn switch_mode(app: AppHandle, key: String) {
+    set_profile(&app, &key);
+    hide_flyout(&app);
+}
+
+#[tauri::command]
+fn close_flyout(app: AppHandle) {
+    hide_flyout(&app);
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) {
+    hide_flyout(&app);
+    show_settings(&app);
+}
+
+#[tauri::command]
 fn get_settings(app: AppHandle) -> SettingsView {
     let shared = app.state::<Shared>();
     let core = lock(&shared);
@@ -864,11 +950,17 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Closing settings must not take the app down with it — the tray is
             // what owns the lifetime here.
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "settings" {
+            match event {
+                WindowEvent::CloseRequested { api, .. } if window.label() == "settings" => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                // The flyout closes the moment attention moves elsewhere,
+                // like every other tray panel on Windows.
+                WindowEvent::Focused(false) if window.label() == "flyout" => {
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .setup(|app| {
@@ -900,7 +992,7 @@ pub fn run() {
             });
 
             let handle = app.handle().clone();
-            tray::create(&handle, &model, on_menu)?;
+            tray::create(&handle, &model, on_menu, toggle_flyout)?;
             apply_autostart(&handle, autostart);
 
             // A shortcut someone else already owns fails to register, and that
@@ -953,6 +1045,9 @@ pub fn run() {
             set_locale,
             set_autostart,
             get_settings,
+            switch_mode,
+            close_flyout,
+            open_settings,
             save_profile,
             add_profile,
             remove_profile,
