@@ -204,18 +204,27 @@ fn show_popup(app: &AppHandle) {
     // Bottom-right of the *work area*, not of the monitor: the monitor's own
     // rectangle includes the strip the taskbar covers, so measuring from its
     // bottom edge puts the popup underneath the taskbar.
-    if let (Some((_, _, right, bottom)), Ok(size)) =
-        (platform::primary_work_area(), window.outer_size())
-    {
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let margin = (POPUP_MARGIN * scale) as i32;
-        let x = right - size.width as i32 - margin;
-        let y = bottom - size.height as i32 - margin;
-        let _ = window.set_position(PhysicalPosition::new(x, y));
-    }
+    let placement = match (platform::primary_work_area(), window.outer_size()) {
+        (Some((_, _, right, bottom)), Ok(size)) => {
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let margin = (POPUP_MARGIN * scale) as i32;
+            let x = right - size.width as i32 - margin;
+            let y = bottom - size.height as i32 - margin;
+            let _ = window.set_position(PhysicalPosition::new(x, y));
+            Some((x, y, size.width as i32, size.height as i32))
+        }
+        _ => None,
+    };
 
     let _ = window.show();
     let _ = window.set_always_on_top(true);
+
+    // The same reason the overlay needs it: always-on-top alone loses to a
+    // borderless fullscreen game, and a popup behind the game is a popup
+    // nobody can press — including the one offering "finish the match".
+    if let (Ok(handle), Some((x, y, width, height))) = (window.hwnd(), placement) {
+        platform::raise_above_everything(handle.0 as isize, x, y, width, height);
+    }
 }
 
 /// Creates one hidden overlay window per monitor, for any that are missing.

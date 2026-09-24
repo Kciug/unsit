@@ -209,7 +209,12 @@ impl Default for Config {
                 snoozes_min: vec![],
                 max_escalation: Escalation::Overlay,
                 match_extension_min: Some(15),
-                in_game_escalation: Some(Escalation::Toast),
+                // Popup, not toast. Windows suppresses notifications while a
+                // game is fullscreen — that is what the state flag means — so
+                // capping at toast caps at nothing, and "finish the match"
+                // lives on the popup. A corner window you can dismiss beats an
+                // overlay you did not see coming.
+                in_game_escalation: Some(Escalation::Popup),
                 session_limit_min: Some(180),
                 session_break_min: Some(15),
             },

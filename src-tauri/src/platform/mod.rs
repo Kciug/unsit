@@ -20,7 +20,7 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::Shell::{
-    SHQueryUserNotificationState, QUERY_USER_NOTIFICATION_STATE, QUNS_PRESENTATION_MODE,
+    SHQueryUserNotificationState, QUERY_USER_NOTIFICATION_STATE, QUNS_BUSY, QUNS_PRESENTATION_MODE,
     QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -80,28 +80,45 @@ pub fn idle_duration() -> Duration {
     Duration::from_millis(now.wrapping_sub(info.dwTime) as u64)
 }
 
+/// What is in front, as far as it concerns us.
+///
+/// Three signals, because no single one covers the ground. The notification
+/// state knows about exclusive fullscreen and presentations. Window geometry
+/// catches borderless fullscreen, which sets no flag of its own and is what
+/// most modern games actually run in. The process list is the manual override
+/// for anything the first two miss.
 pub fn detect_context(games: &[String]) -> Context {
-    if let Some(state) = notification_state() {
-        if state == QUNS_PRESENTATION_MODE {
-            return Context::Presentation;
-        }
-        // Exclusive fullscreen Direct3D: a game, and one we cannot draw over.
-        if state == QUNS_RUNNING_D3D_FULL_SCREEN {
-            return Context::Game;
-        }
+    let state = notification_state();
+
+    if state == Some(QUNS_PRESENTATION_MODE) {
+        return Context::Presentation;
     }
 
-    // Borderless fullscreen never sets the D3D flag, so fall back to asking
-    // what is actually in front.
+    // Exclusive fullscreen Direct3D. A window put over this does not draw over
+    // the game, it alt-tabs out of it, so this has to stay distinguishable
+    // from the borderless case.
+    if state == Some(QUNS_RUNNING_D3D_FULL_SCREEN) {
+        return Context::ExclusiveGame;
+    }
+
+    // QUNS_BUSY is Windows saying a full-screen app is running and it has
+    // stopped showing notifications. Worth trusting on its own, because it is
+    // also the reason a toast would go unseen.
+    if state == Some(QUNS_BUSY) {
+        return Context::Game;
+    }
+
     let listed = foreground_process_name()
         .map(|name| games.contains(&name))
         .unwrap_or(false);
 
-    if listed {
-        Context::Game
-    } else {
-        Context::Free
+    // Covering the monitor exactly is the borderless signature: a merely
+    // maximised window stops at the work area and leaves the taskbar showing.
+    if listed || foreground_covers_monitor() {
+        return Context::Game;
     }
+
+    Context::Free
 }
 
 fn notification_state() -> Option<QUERY_USER_NOTIFICATION_STATE> {
@@ -149,9 +166,7 @@ fn foreground_process_name() -> Option<String> {
 /// Whether the foreground window covers its whole monitor.
 ///
 /// Tells borderless fullscreen apart from a merely large window, which decides
-/// whether an overlay stands a chance of being seen. Written ahead of the
-/// automatic profile switching in v0.2, which is the first thing that needs it.
-#[allow(dead_code)]
+/// whether an overlay stands a chance of being seen.
 pub fn foreground_covers_monitor() -> bool {
     // SAFETY: every handle is checked, and both structs are stack-allocated
     // with their size fields set where the API requires it.

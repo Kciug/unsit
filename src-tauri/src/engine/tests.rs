@@ -382,28 +382,85 @@ fn a_taken_break_does_buy_back_session_time() {
     assert_eq!(machine.cycle.session_used, Duration::ZERO);
 }
 
-#[test]
-fn a_game_in_the_foreground_keeps_the_popup_down_to_a_toast() {
-    let profile = profile("gaming");
-    let policy = policy(&profile);
+/// Drives a gaming cycle to the prompt with `context` in front the whole time.
+fn to_prompt_in(context: Context, policy: &Policy) -> (Machine, Vec<Effect>, Timestamp) {
     let start = t0();
-
-    let machine = Machine::new(start, &profile);
+    let machine = Machine::new(start, policy.profile);
     let (machine, _) = step(
         machine,
-        Event::ContextChanged(Context::Game),
+        Event::ContextChanged(context),
         start,
+        Duration::ZERO,
+        policy,
+    );
+
+    let span = policy.profile.interval() + SECOND;
+    advance(machine, start, span, Duration::ZERO, policy)
+}
+
+#[test]
+fn a_borderless_game_still_gets_the_popup() {
+    let profile = profile("gaming");
+    let policy = policy(&profile);
+    let (machine, effects, now) = to_prompt_in(Context::Game, &policy);
+
+    assert!(matches!(machine.state, State::Prompt { .. }));
+    // The popup is how "finish the match" is offered at all. Hiding it during
+    // a game removes the one feature gaming mode exists for.
+    assert!(effects.contains(&Effect::ShowPopup));
+    assert!(machine.match_extension_available(&profile));
+
+    // But it stops there: no overlay lands on someone mid-game.
+    let span = profile.prompt_timeout() + SECOND;
+    let (machine, effects, _) = advance(machine, now, span, Duration::ZERO, &policy);
+    assert!(
+        !effects.contains(&Effect::ShowOverlay),
+        "an overlay must wait for the game to end"
+    );
+    assert!(matches!(machine.state, State::Prompt { .. }));
+}
+
+#[test]
+fn an_exclusive_fullscreen_game_gets_nothing_but_a_toast() {
+    let profile = profile("gaming");
+    let policy = policy(&profile);
+    let (machine, effects, now) = to_prompt_in(Context::ExclusiveGame, &policy);
+
+    // Any window here would alt-tab the game rather than draw over it, which
+    // is worse than the missed break. Not configurable for that reason.
+    assert!(
+        !effects.contains(&Effect::ShowPopup),
+        "a window over exclusive fullscreen drops the player out of the game"
+    );
+    assert!(effects.contains(&Effect::ShowToast));
+
+    let span = profile.prompt_timeout() + SECOND;
+    let (machine, effects, _) = advance(machine, now, span, Duration::ZERO, &policy);
+    assert!(!effects.contains(&Effect::ShowOverlay));
+    assert!(matches!(machine.state, State::Prompt { .. }));
+}
+
+#[test]
+fn leaving_the_game_lets_the_waiting_prompt_escalate() {
+    let profile = profile("gaming");
+    let policy = policy(&profile);
+    let (machine, _, now) = to_prompt_in(Context::ExclusiveGame, &policy);
+
+    // Long past the point where it would have escalated, still held back.
+    let span = profile.prompt_timeout() + SECOND;
+    let (machine, _, now) = advance(machine, now, span, Duration::ZERO, &policy);
+    assert!(matches!(machine.state, State::Prompt { .. }));
+
+    // Quitting the game lifts the cap, and the overdue break arrives.
+    let (machine, _) = step(
+        machine,
+        Event::ContextChanged(Context::Free),
+        now,
         Duration::ZERO,
         &policy,
     );
+    let (machine, effects, _) = advance(machine, now, SECOND * 2, Duration::ZERO, &policy);
 
-    let span = profile.interval() + SECOND;
-    let (machine, effects, _) = advance(machine, start, span, Duration::ZERO, &policy);
-
-    assert!(matches!(machine.state, State::Prompt { .. }));
-    assert!(
-        !effects.contains(&Effect::ShowPopup),
-        "no window over a running game"
-    );
-    assert!(effects.contains(&Effect::ShowToast));
+    assert!(effects.contains(&Effect::ShowOverlay));
+    assert!(matches!(machine.state, State::Break { .. }));
 }

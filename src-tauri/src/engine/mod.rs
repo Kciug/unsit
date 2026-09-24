@@ -23,7 +23,12 @@ pub type Timestamp = SystemTime;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Context {
     Free,
+    /// Borderless fullscreen. A topmost window draws over this quite happily,
+    /// which makes the popup — and with it "finish the match" — reachable.
     Game,
+    /// Exclusive fullscreen Direct3D. Putting a window over this does not draw
+    /// over the game, it alt-tabs out of it, so nothing may be shown at all.
+    ExclusiveGame,
     /// Detected from the microphone. Not wired up yet — call detection is v0.3+
     /// — but the machine already knows how to hold escalation for one.
     #[allow(dead_code)]
@@ -524,12 +529,17 @@ fn forced_session_break(machine: &Machine, policy: &Policy) -> Option<Duration> 
 
 /// How far escalation may go right now.
 fn ceiling(machine: &Machine, policy: &Policy) -> Escalation {
-    if machine.context == Context::Game {
-        if let Some(in_game) = policy.profile.in_game_escalation {
-            return in_game;
-        }
+    match machine.context {
+        // Not configurable, and deliberately so: showing anything over an
+        // exclusive-fullscreen game minimises it. A break is not worth
+        // dropping someone out of a match.
+        Context::ExclusiveGame => Escalation::Toast,
+        Context::Game => policy
+            .profile
+            .in_game_escalation
+            .unwrap_or(policy.profile.max_escalation),
+        _ => policy.profile.max_escalation,
     }
-    policy.profile.max_escalation
 }
 
 fn since(now: Timestamp, earlier: Timestamp) -> Duration {
