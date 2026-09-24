@@ -98,9 +98,14 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -am 'Release ${{ steps.version.outputs.tag }}'
-          git tag '${{ steps.version.outputs.tag }}'
+          # Annotated, and pushed on its own line. `--follow-tags` silently
+          # ignores lightweight tags, which leaves the commit pushed and the tag
+          # behind — and then GitHub creates the tag when the draft is published,
+          # against whatever the branch head is by then.
+          git tag -a '${{ steps.version.outputs.tag }}' -m 'Unsit ${{ steps.version.outputs.tag }}'
           # HEAD is detached after checkout, so name the branch explicitly.
-          git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin '${{ steps.version.outputs.tag }}'
 
       - name: Install dependencies
         run: npm ci
