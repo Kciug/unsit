@@ -17,7 +17,7 @@ use tauri_plugin_notification::NotificationExt;
 use config::{Config, Locale, Profile};
 use engine::{Context, Effect, Event, Machine, Policy, State};
 use platform::{ContextSource, WindowsContext};
-use ui::{Notice, SettingsView, StateKind, UiState, NOTICE_EVENT, STATE_EVENT};
+use ui::{Notice, ProfileEdit, SettingsView, StateKind, UiState, NOTICE_EVENT, STATE_EVENT};
 
 const TICK: Duration = Duration::from_secs(1);
 /// How long the notice window stays up before taking itself away.
@@ -244,8 +244,20 @@ fn tooltip(snapshot: &UiState, mode: &str) -> String {
     format!("Unsit — {}", status(snapshot, mode))
 }
 
+/// Seconds as a clock, growing an hours field only once there is one.
+///
+/// A ninety-minute interval read "90:00" before this, which is a duration
+/// nobody writes down that way.
 fn clock(seconds: u64) -> String {
-    format!("{}:{:02}", seconds / 60, seconds % 60)
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
 }
 
 fn show_toast(app: &AppHandle, locale: Locale) {
@@ -616,16 +628,62 @@ fn get_settings(app: AppHandle) -> SettingsView {
     SettingsView::build(&core.config, &core.profile, core.hotkey_registered)
 }
 
-/// Bounds for the two numbers the settings window can change.
+/// Bounds for anything the settings window can set.
 ///
 /// Not paranoia: a zero-minute interval would fire a break every tick, and the
 /// settings window is the one place a typo turns straight into behaviour.
 const MIN_MINUTES: u64 = 1;
-const MAX_INTERVAL_MIN: u64 = 480;
+const MAX_INTERVAL_MIN: u64 = 720;
 const MAX_BREAK_MIN: u64 = 120;
+const MAX_SNOOZES: usize = 5;
+
+fn sanitise(edit: ProfileEdit) -> ProfileEdit {
+    let interval_min = edit.interval_min.clamp(MIN_MINUTES, MAX_INTERVAL_MIN);
+
+    ProfileEdit {
+        interval_min,
+        break_min: edit.break_min.clamp(MIN_MINUTES, MAX_BREAK_MIN),
+        // A warning longer than half the interval would fire almost as soon as
+        // the cycle began, which is not a warning about anything.
+        warning_sec: edit.warning_sec.min(interval_min * 30),
+        snoozes_min: edit
+            .snoozes_min
+            .into_iter()
+            .filter(|minutes| *minutes > 0)
+            .map(|minutes| minutes.min(MAX_BREAK_MIN))
+            .take(MAX_SNOOZES)
+            .collect(),
+        max_escalation: edit.max_escalation,
+        match_extension_min: edit
+            .match_extension_min
+            .map(|minutes| minutes.clamp(MIN_MINUTES, MAX_BREAK_MIN)),
+        session_limit_min: edit
+            .session_limit_min
+            .map(|minutes| minutes.clamp(MIN_MINUTES, MAX_INTERVAL_MIN)),
+        session_break_min: edit
+            .session_break_min
+            .map(|minutes| minutes.clamp(MIN_MINUTES, MAX_BREAK_MIN)),
+    }
+}
+
+/// Writes an edit onto a profile.
+///
+/// `prompt_timeout_sec` and `in_game_escalation` are deliberately untouched:
+/// they are not in `ProfileEdit`, the settings window never shows them, and
+/// overwriting them with a default would quietly undo a hand-edited config.
+fn apply_edit(profile: &mut Profile, edit: ProfileEdit) {
+    profile.interval_min = edit.interval_min;
+    profile.break_min = edit.break_min;
+    profile.warning_sec = edit.warning_sec;
+    profile.snoozes_min = edit.snoozes_min;
+    profile.max_escalation = edit.max_escalation;
+    profile.match_extension_min = edit.match_extension_min;
+    profile.session_limit_min = edit.session_limit_min;
+    profile.session_break_min = edit.session_break_min;
+}
 
 #[tauri::command]
-fn set_profile_times(app: AppHandle, profile: String, interval_min: u64, break_min: u64) {
+fn save_profile(app: AppHandle, profile: String, edit: ProfileEdit) {
     let restarted = {
         let shared = app.state::<Shared>();
         let mut core = lock(&shared);
@@ -633,12 +691,10 @@ fn set_profile_times(app: AppHandle, profile: String, interval_min: u64, break_m
         let Some(entry) = core.config.profiles.get_mut(&profile) else {
             return;
         };
-        entry.interval_min = interval_min.clamp(MIN_MINUTES, MAX_INTERVAL_MIN);
-        entry.break_min = break_min.clamp(MIN_MINUTES, MAX_BREAK_MIN);
-
+        apply_edit(entry, sanitise(edit));
         let _ = core.config.save();
 
-        // Editing the profile you are currently in restarts the cycle, the same
+        // Editing the mode you are currently in restarts the cycle, the same
         // rule as switching modes. Carrying the old deadline into a new
         // interval is the confusing option in both directions.
         if profile == core.profile {
@@ -652,6 +708,86 @@ fn set_profile_times(app: AppHandle, profile: String, interval_min: u64, break_m
     };
 
     if restarted {
+        hide_all(&app);
+    }
+    dispatch(&app, Event::Tick);
+}
+
+/// Adds a mode, copying whatever the active one does.
+///
+/// Copying beats starting from blank defaults: someone adding "Reading" next
+/// to "Chill" almost always wants something close to where they already are.
+#[tauri::command]
+fn add_profile(app: AppHandle, key: String) -> Option<String> {
+    let key = key.trim().to_owned();
+    if key.is_empty() {
+        return None;
+    }
+
+    let model = {
+        let shared = app.state::<Shared>();
+        let mut core = lock(&shared);
+
+        if core.config.profiles.contains_key(&key) {
+            return None;
+        }
+        let template = core.profile().unwrap_or_else(|| {
+            Config::default()
+                .profiles
+                .remove("work")
+                .expect("the defaults always carry work")
+        });
+
+        core.config.profiles.insert(key.clone(), template);
+        let _ = core.config.save();
+        core.menu_model()
+    };
+
+    tray::refresh(&app, &model);
+    dispatch(&app, Event::Tick);
+    Some(key)
+}
+
+#[tauri::command]
+fn remove_profile(app: AppHandle, key: String) {
+    let (model, switched) = {
+        let shared = app.state::<Shared>();
+        let mut core = lock(&shared);
+
+        // Never the last one. An app with no modes has nothing to count down.
+        if core.config.profiles.len() <= 1 || !core.config.profiles.contains_key(&key) {
+            return;
+        }
+
+        core.config.profiles.remove(&key);
+
+        // Deleting the mode you are in, or the one that loads at startup,
+        // has to land somewhere rather than dangle.
+        let fallback = core
+            .config
+            .profiles
+            .keys()
+            .next()
+            .cloned()
+            .expect("checked above that one remains");
+
+        let switched = core.profile == key;
+        if switched {
+            core.profile = fallback.clone();
+            if let Some(profile) = core.profile() {
+                core.machine = Machine::new(SystemTime::now(), &profile);
+            }
+        }
+        if core.config.general.default_profile == key {
+            core.config.general.default_profile = fallback;
+        }
+
+        let _ = core.config.save();
+        (core.menu_model(), switched)
+    };
+
+    tray::refresh(&app, &model);
+    if switched {
         hide_all(&app);
     }
     dispatch(&app, Event::Tick);
@@ -817,7 +953,9 @@ pub fn run() {
             set_locale,
             set_autostart,
             get_settings,
-            set_profile_times,
+            save_profile,
+            add_profile,
+            remove_profile,
             set_sound
         ])
         .run(tauri::generate_context!())

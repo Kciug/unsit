@@ -7,9 +7,9 @@
 
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, EscapeMethod, Locale, Profile};
+use crate::config::{Config, Escalation, EscapeMethod, Locale, Profile};
 use crate::engine::{Machine, State, Timestamp};
 
 pub const STATE_EVENT: &str = "unsit://state";
@@ -110,13 +110,49 @@ impl UiState {
     }
 }
 
-/// One editable profile, as the settings window sees it.
+/// The editable half of a mode, travelling in both directions.
+///
+/// Everything a mode has that a person would reasonably want to change, so the
+/// settings window hands back the shape it was given rather than growing a pile
+/// of single-field commands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileEdit {
+    pub interval_min: u64,
+    pub break_min: u64,
+    pub warning_sec: u64,
+    /// Lengths in order, so a mode can taper: five minutes, then three.
+    pub snoozes_min: Vec<u64>,
+    pub max_escalation: Escalation,
+    /// All three are meaningless outside a gaming-shaped mode, and `None` is
+    /// how a mode says it does not do this at all.
+    pub match_extension_min: Option<u64>,
+    pub session_limit_min: Option<u64>,
+    pub session_break_min: Option<u64>,
+}
+
+impl From<&Profile> for ProfileEdit {
+    fn from(profile: &Profile) -> Self {
+        Self {
+            interval_min: profile.interval_min,
+            break_min: profile.break_min,
+            warning_sec: profile.warning_sec,
+            snoozes_min: profile.snoozes_min.clone(),
+            max_escalation: profile.max_escalation,
+            match_extension_min: profile.match_extension_min,
+            session_limit_min: profile.session_limit_min,
+            session_break_min: profile.session_break_min,
+        }
+    }
+}
+
+/// One editable mode, as the settings window sees it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileView {
     pub key: String,
-    pub interval_min: u64,
-    pub break_min: u64,
+    #[serde(flatten)]
+    pub edit: ProfileEdit,
 }
 
 /// A snapshot for the settings window.
@@ -152,8 +188,7 @@ impl SettingsView {
                 .iter()
                 .map(|(key, profile)| ProfileView {
                     key: key.clone(),
-                    interval_min: profile.interval_min,
-                    break_min: profile.break_min,
+                    edit: ProfileEdit::from(profile),
                 })
                 .collect(),
         }
@@ -178,4 +213,42 @@ pub const NOTICE_EVENT: &str = "unsit://notice";
 pub struct Notice {
     pub title: String,
     pub body: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    /// The settings window reads these names literally, and `flatten` plus
+    /// `rename_all` is exactly the sort of thing that changes shape quietly.
+    #[test]
+    fn the_settings_view_keeps_the_shape_typescript_expects() {
+        let view = SettingsView::build(&Config::default(), "work", true);
+        let json = serde_json::to_string(&view).expect("serialise");
+
+        for field in [
+            "hotkeyRegistered",
+            "activeProfile",
+            "intervalMin",
+            "breakMin",
+            "warningSec",
+            "snoozesMin",
+            "maxEscalation",
+            "matchExtensionMin",
+            "sessionLimitMin",
+            "sessionBreakMin",
+        ] {
+            assert!(
+                json.contains(&format!("\"{field}\"")),
+                "missing {field}: {json}"
+            );
+        }
+
+        // Flattened onto the profile, not nested under an "edit" key.
+        assert!(
+            !json.contains("\"edit\""),
+            "profile fields got nested: {json}"
+        );
+    }
 }

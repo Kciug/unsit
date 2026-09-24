@@ -77,18 +77,36 @@ export const uiState = readable<UiState>(initialState, (set) => {
   }
 })
 
-/** Seconds as mm:ss. */
+/** Seconds as a clock, growing an hours field only once there is one. */
 export function formatDuration(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds))
-  const minutes = Math.floor(safe / 60)
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
   const seconds = safe % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+  const padded = String(seconds).padStart(2, "0")
+
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${padded}`
+    : `${minutes}:${padded}`
 }
 
-export interface ProfileSettings {
-  key: string
+export type Escalation = 'toast' | 'popup' | 'overlay' | 'lock'
+
+export interface ProfileEdit {
   intervalMin: number
   breakMin: number
+  warningSec: number
+  /** Lengths in order, so a mode can taper: five minutes, then three. */
+  snoozesMin: number[]
+  maxEscalation: Escalation
+  /** All three are null on a mode that does not do the gaming things. */
+  matchExtensionMin: number | null
+  sessionLimitMin: number | null
+  sessionBreakMin: number | null
+}
+
+export interface ProfileSettings extends ProfileEdit {
+  key: string
 }
 
 /**

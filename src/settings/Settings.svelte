@@ -1,23 +1,37 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import DurationField from '../lib/DurationField.svelte'
   import { locale, t, type Key, type Locale } from '../lib/i18n'
   import {
+    addProfile,
     getSettings,
+    removeProfile,
+    saveProfile,
     setAutostart,
     setLocale,
-    setProfileTimes,
     setSound,
   } from '../lib/commands'
-  import { uiState, type ProfileSettings, type SettingsView } from '../lib/state'
+  import {
+    uiState,
+    type Escalation,
+    type ProfileEdit,
+    type ProfileSettings,
+    type SettingsView,
+  } from '../lib/state'
 
   const locales: { value: Locale; label: string }[] = [
     { value: 'en', label: 'English' },
     { value: 'pl', label: 'Polski' },
   ]
 
-  // Profiles come from a one-off fetch. Locale and autostart do not — they ride
+  // Lock is missing on purpose: hard mode is not built, and offering a ceiling
+  // the ladder never reaches would be another button that lies.
+  const escalations: Escalation[] = ['toast', 'popup', 'overlay']
+
+  // Modes come from a one-off fetch. Locale and autostart do not — they ride
   // the state event, so the tray and this window can never disagree.
   let settings = $state<SettingsView | null>(null)
+  let newMode = $state('')
 
   async function refresh() {
     settings = await getSettings()
@@ -32,15 +46,43 @@
     void setLocale(value).catch(() => locale.set(value))
   }
 
+  /** Sends the whole mode back, then re-reads: the backend clamps. */
   async function commit(profile: ProfileSettings) {
-    await setProfileTimes(profile.key, profile.intervalMin, profile.breakMin)
-    // Re-read, because the backend clamps: a typed 0 comes back as 1.
+    const { key, ...edit } = profile
+    await saveProfile(key, edit as ProfileEdit)
+    await refresh()
+  }
+
+  async function add() {
+    if (!newMode.trim()) return
+    await addProfile(newMode)
+    newMode = ''
+    await refresh()
+  }
+
+  async function remove(key: string) {
+    await removeProfile(key)
     await refresh()
   }
 
   function label(key: string): string {
     const translated = $t(`mode.${key}` as Key)
     return translated === `mode.${key}` ? key : translated
+  }
+
+  /** "5, 3" both ways — a list is easier to type than it is to build a widget for. */
+  function parseSnoozes(raw: string): number[] {
+    return raw
+      .split(',')
+      .map((part) => Number(part.trim()))
+      .filter((value) => Number.isFinite(value) && value > 0)
+  }
+
+  function optional(event: Event): number | null {
+    const raw = (event.currentTarget as HTMLInputElement).value.trim()
+    if (raw === '') return null
+    const value = Number(raw)
+    return Number.isFinite(value) && value > 0 ? value : null
   }
 </script>
 
@@ -81,9 +123,9 @@
         {$t('settings.sound')}
       </label>
 
-      <!-- Read-only for now: capturing a key combination properly is its own
-           piece of work, and config.toml can already change it. -->
-      <div class="hotkey">
+      <!-- Read-only: capturing a key combination properly is its own piece of
+           work, and config.toml can already change it. -->
+      <div class="row">
         <span>{$t('settings.hotkey')}</span>
         <kbd>{settings.hotkey}</kbd>
       </div>
@@ -98,34 +140,149 @@
       <h2>{$t('settings.modes')}</h2>
 
       {#each settings.profiles as profile (profile.key)}
-        <div class="profile" class:active={profile.key === settings.activeProfile}>
-          <span class="name">{label(profile.key)}</span>
+        <details class:active={profile.key === settings.activeProfile}>
+          <summary>
+            <span class="name">{label(profile.key)}</span>
+            <span class="summary-times">
+              {profile.intervalMin} / {profile.breakMin} {$t('settings.minutes')}
+            </span>
+          </summary>
 
-          <label>
-            {$t('settings.interval')}
-            <input
-              type="number"
-              min="1"
-              max="480"
-              bind:value={profile.intervalMin}
-              onchange={() => commit(profile)}
-            />
-            <span class="unit">{$t('settings.minutes')}</span>
-          </label>
+          <div class="fields">
+            <label>
+              {$t('settings.interval')}
+              <DurationField
+                minutes={profile.intervalMin}
+                max={720}
+                onchange={(minutes) => {
+                  profile.intervalMin = minutes
+                  void commit(profile)
+                }}
+              />
+            </label>
 
-          <label>
-            {$t('settings.break')}
-            <input
-              type="number"
-              min="1"
-              max="120"
-              bind:value={profile.breakMin}
-              onchange={() => commit(profile)}
-            />
-            <span class="unit">{$t('settings.minutes')}</span>
-          </label>
-        </div>
+            <label>
+              {$t('settings.break')}
+              <DurationField
+                minutes={profile.breakMin}
+                max={120}
+                onchange={(minutes) => {
+                  profile.breakMin = minutes
+                  void commit(profile)
+                }}
+              />
+            </label>
+
+            <label>
+              {$t('settings.warning')}
+              <input
+                type="number"
+                min="0"
+                max="3600"
+                bind:value={profile.warningSec}
+                onchange={() => commit(profile)}
+              />
+              <span class="unit">{$t('settings.seconds')}</span>
+            </label>
+
+            <label>
+              {$t('settings.escalation')}
+              <select
+                value={profile.maxEscalation}
+                onchange={(event) => {
+                  profile.maxEscalation = event.currentTarget.value as Escalation
+                  void commit(profile)
+                }}
+              >
+                {#each escalations as step (step)}
+                  <option value={step}>{$t(`escalation.${step}` as Key)}</option>
+                {/each}
+              </select>
+            </label>
+
+            <label class="wide">
+              {$t('settings.snoozes')}
+              <input
+                type="text"
+                value={profile.snoozesMin.join(', ')}
+                onchange={(event) => {
+                  profile.snoozesMin = parseSnoozes(event.currentTarget.value)
+                  void commit(profile)
+                }}
+              />
+            </label>
+            <p class="note">{$t('settings.snoozesHint')}</p>
+
+            <h3>{$t('settings.gaming')}</h3>
+
+            <label>
+              {$t('settings.matchExtension')}
+              <input
+                type="number"
+                min="1"
+                max="120"
+                placeholder={$t('settings.off')}
+                value={profile.matchExtensionMin ?? ''}
+                onchange={(event) => {
+                  profile.matchExtensionMin = optional(event)
+                  void commit(profile)
+                }}
+              />
+              <span class="unit">{$t('settings.minutes')}</span>
+            </label>
+
+            <label>
+              {$t('settings.sessionLimit')}
+              <input
+                type="number"
+                min="1"
+                max="720"
+                placeholder={$t('settings.off')}
+                value={profile.sessionLimitMin ?? ''}
+                onchange={(event) => {
+                  profile.sessionLimitMin = optional(event)
+                  void commit(profile)
+                }}
+              />
+              <span class="unit">{$t('settings.minutes')}</span>
+            </label>
+
+            <label>
+              {$t('settings.sessionBreak')}
+              <input
+                type="number"
+                min="1"
+                max="120"
+                placeholder={$t('settings.off')}
+                value={profile.sessionBreakMin ?? ''}
+                onchange={(event) => {
+                  profile.sessionBreakMin = optional(event)
+                  void commit(profile)
+                }}
+              />
+              <span class="unit">{$t('settings.minutes')}</span>
+            </label>
+
+            {#if settings.profiles.length > 1}
+              <button class="remove" onclick={() => remove(profile.key)}>
+                {$t('settings.remove')}
+              </button>
+            {/if}
+          </div>
+        </details>
       {/each}
+
+      <div class="row">
+        <input
+          type="text"
+          placeholder={$t('settings.modeName')}
+          bind:value={newMode}
+          onkeydown={(event) => {
+            if (event.key === 'Enter') void add()
+          }}
+        />
+        <button onclick={add} disabled={!newMode.trim()}>{$t('settings.addMode')}</button>
+      </div>
     </section>
   {/if}
 
@@ -155,13 +312,23 @@
     color: var(--muted);
   }
 
+  h3 {
+    margin: 0.5rem 0 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
   section {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
   }
 
-  label {
+  label,
+  .row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -171,36 +338,52 @@
     gap: 0.5rem;
   }
 
-  .profile {
-    display: grid;
-    grid-template-columns: 5.5rem 1fr 1fr;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
+  details {
     border: 1px solid var(--border);
     border-radius: 6px;
+    padding: 0.5rem 0.75rem;
   }
 
   /* The mode you are actually in, so an edit is never made to the wrong one by
      accident. */
-  .profile.active {
+  details.active {
     border-color: var(--accent);
+  }
+
+  summary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    cursor: pointer;
+  }
+
+  .fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-top: 0.75rem;
   }
 
   .name {
     font-weight: 600;
   }
 
+  .summary-times,
   .unit {
     color: var(--muted);
     font-size: 0.8rem;
   }
 
+  label.wide input {
+    flex: 1;
+  }
+
   select,
-  input[type='number'] {
+  input[type='number'],
+  input[type='text'] {
     font: inherit;
     color: inherit;
-    width: 4.5rem;
+    width: 6rem;
     padding: 0.3rem 0.4rem;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -211,6 +394,17 @@
     width: auto;
   }
 
+  .remove {
+    align-self: flex-start;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+  }
+
+  .remove:hover {
+    border-color: #c96a6a;
+    color: #e08b8b;
+  }
+
   .note {
     margin: 0;
     color: var(--muted);
@@ -219,12 +413,6 @@
 
   .note.warn {
     color: #e0a34a;
-  }
-
-  .hotkey {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
   }
 
   kbd {
