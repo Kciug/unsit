@@ -23,6 +23,7 @@ windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Sy
 tauri-plugin-notification = "2.4.0"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-single-instance = "2.4.5"
+tauri-plugin-global-shortcut = "2.3.2"
 
 # Plugins from the v0.1 list (autostart, single-instance, notification,
 # global-shortcut) get added as they are wired up, so an unused dependency never

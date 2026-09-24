@@ -101,6 +101,29 @@ export interface SettingsView {
   locale: Locale
   autostart: boolean
   sound: boolean
+  hotkey: string
+  hotkeyRegistered: boolean
   activeProfile: string
   profiles: ProfileSettings[]
 }
+
+export interface NoticePayload {
+  title: string
+  body: string | null
+}
+
+export const NOTICE_EVENT = 'unsit://notice'
+
+/**
+ * Text for the transient notice window.
+ *
+ * Already translated when it arrives: this window stands in for a Windows
+ * notification while a game is running, and the backend owns those strings
+ * because it owns the locale.
+ */
+export const notice = readable<NoticePayload | null>(null, (set) => {
+  const pending = listen<NoticePayload | null>(NOTICE_EVENT, (event) => set(event.payload))
+  return () => {
+    void pending.then((unlisten) => unlisten()).catch(() => {})
+  }
+})

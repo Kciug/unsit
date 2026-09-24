@@ -15,11 +15,13 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_notification::NotificationExt;
 
 use config::{Config, Locale, Profile};
-use engine::{Effect, Event, Machine, Policy, State};
+use engine::{Context, Effect, Event, Machine, Policy, State};
 use platform::{ContextSource, WindowsContext};
-use ui::{SettingsView, StateKind, UiState, STATE_EVENT};
+use ui::{Notice, SettingsView, StateKind, UiState, NOTICE_EVENT, STATE_EVENT};
 
 const TICK: Duration = Duration::from_secs(1);
+/// How long the notice window stays up before taking itself away.
+const NOTICE_SECONDS: u64 = 6;
 /// Gap between the popup and the corner of the screen, in logical pixels.
 const POPUP_MARGIN: f64 = 24.0;
 
@@ -28,6 +30,12 @@ struct Core {
     config: Config,
     profile: String,
     context_source: WindowsContext,
+    /// Whether the shortcut was actually claimed. Another app may already own
+    /// it, and in a release build the log saying so goes nowhere.
+    hotkey_registered: bool,
+    /// When the notice window should take itself away. Kept here rather than
+    /// in the window, because timing belongs to the backend.
+    notice_until: Option<SystemTime>,
 }
 
 impl Core {
@@ -57,6 +65,10 @@ struct Render {
     profile: String,
     locale: Locale,
     sound: bool,
+    /// A borderless game is in front, so a toast would be discarded and our
+    /// own window has to stand in for it. False under exclusive fullscreen,
+    /// where no window of ours can be drawn at all.
+    use_notice: bool,
 }
 
 /// Locks the shared state, recovering from a poisoned mutex.
@@ -90,10 +102,19 @@ fn dispatch(app: &AppHandle, event: Event) {
     #[cfg(debug_assertions)]
     let user_driven = !matches!(event, Event::Tick);
 
-    let (effects, snapshot, render) = {
+    let (effects, snapshot, render, expire_notice) = {
         let mut core = lock(&shared);
         let Some(profile) = core.profile() else {
             return;
+        };
+
+        // The notice takes itself away on our clock, not the window's.
+        let expire_notice = match core.notice_until {
+            Some(until) if now >= until => {
+                core.notice_until = None;
+                true
+            }
+            _ => false,
         };
 
         let policy = Policy {
@@ -134,9 +155,10 @@ fn dispatch(app: &AppHandle, event: Event) {
             profile: core.profile.clone(),
             locale: core.config.general.locale,
             sound: core.config.general.sound,
+            use_notice: core.machine.context == Context::Game,
         };
 
-        (effects, snapshot, render)
+        (effects, snapshot, render, expire_notice)
     };
 
     // A dead button and a button the machine deliberately ignores look the
@@ -156,6 +178,9 @@ fn dispatch(app: &AppHandle, event: Event) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         tray::set_tooltip(&handle, &tip);
+        if expire_notice {
+            hide_notice(&handle);
+        }
         for effect in effects {
             apply(&handle, effect, &render);
         }
@@ -164,6 +189,15 @@ fn dispatch(app: &AppHandle, event: Event) {
 
 fn apply(app: &AppHandle, effect: Effect, render: &Render) {
     match effect {
+        // Over a borderless game a real notification is discarded by Windows
+        // before it reaches the screen, so our own window stands in for it.
+        Effect::ShowToast if render.use_notice => show_notice(
+            app,
+            Notice {
+                title: i18n::warning_title(render.locale).to_owned(),
+                body: Some(i18n::warning_body(render.locale).to_owned()),
+            },
+        ),
         Effect::ShowToast => show_toast(app, render.locale),
         Effect::ShowPopup => show_popup(app),
         Effect::ShowOverlay => show_overlays(app),
@@ -178,28 +212,36 @@ fn apply(app: &AppHandle, effect: Effect, render: &Render) {
     }
 }
 
-fn tooltip(snapshot: &UiState, mode: &str) -> String {
+/// One line saying where the machine is.
+///
+/// Shared by the tray tooltip and the peek notice, so the two can never end up
+/// describing the same state differently.
+fn status(snapshot: &UiState, mode: &str) -> String {
     let locale = snapshot.locale;
 
     match snapshot.kind {
         StateKind::Break => {
             if snapshot.counter_held {
-                i18n::tooltip_held(locale)
+                i18n::status_held(locale)
             } else {
                 let left = snapshot
                     .required_seconds
                     .saturating_sub(snapshot.earned_seconds);
-                i18n::tooltip_break(locale, &clock(left))
+                i18n::status_break(locale, &clock(left))
             }
         }
-        StateKind::Done => i18n::tooltip_done(locale),
-        StateKind::Paused | StateKind::Suspended => i18n::tooltip_paused(locale),
-        StateKind::Prompt => i18n::tooltip_due(locale, mode),
+        StateKind::Done => i18n::status_done(locale),
+        StateKind::Paused | StateKind::Suspended => i18n::status_paused(locale),
+        StateKind::Prompt => i18n::status_due(locale, mode),
         _ => match snapshot.seconds_left {
-            Some(left) => i18n::tooltip_counting(locale, mode, &clock(left)),
-            None => i18n::tooltip_due(locale, mode),
+            Some(left) => i18n::status_counting(locale, mode, &clock(left)),
+            None => i18n::status_due(locale, mode),
         },
     }
+}
+
+fn tooltip(snapshot: &UiState, mode: &str) -> String {
+    format!("Unsit — {}", status(snapshot, mode))
 }
 
 fn clock(seconds: u64) -> String {
@@ -213,6 +255,47 @@ fn show_toast(app: &AppHandle, locale: Locale) {
         .title(i18n::warning_title(locale))
         .body(i18n::warning_body(locale))
         .show();
+}
+
+/// Shows the transient notice, top-right and out of the way.
+///
+/// Top-right rather than bottom-right on purpose: the prompt popup lives in the
+/// bottom corner, and a peek pressed while a prompt is waiting would otherwise
+/// land on top of it.
+fn show_notice(app: &AppHandle, notice: Notice) {
+    let Some(window) = app.get_webview_window("notice") else {
+        return;
+    };
+
+    let _ = app.emit_to("notice", NOTICE_EVENT, Some(notice));
+
+    let placement = match (platform::primary_work_area(), window.outer_size()) {
+        (Some((_, top, right, _)), Ok(size)) => {
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let margin = (POPUP_MARGIN * scale) as i32;
+            let x = right - size.width as i32 - margin;
+            let y = top + margin;
+            let _ = window.set_position(PhysicalPosition::new(x, y));
+            Some((x, y, size.width as i32, size.height as i32))
+        }
+        _ => None,
+    };
+
+    let _ = window.show();
+    if let (Ok(handle), Some((x, y, width, height))) = (window.hwnd(), placement) {
+        platform::raise_above_everything(handle.0 as isize, x, y, width, height);
+    }
+
+    let shared = app.state::<Shared>();
+    let mut core = lock(&shared);
+    core.notice_until = SystemTime::now().checked_add(Duration::from_secs(NOTICE_SECONDS));
+}
+
+fn hide_notice(app: &AppHandle) {
+    let _ = app.emit_to("notice", NOTICE_EVENT, Option::<Notice>::None);
+    if let Some(window) = app.get_webview_window("notice") {
+        let _ = window.hide();
+    }
 }
 
 fn show_popup(app: &AppHandle) {
@@ -347,6 +430,10 @@ fn show_overlays(app: &AppHandle) {
 }
 
 fn hide_all(app: &AppHandle) {
+    // The notice goes too: a warning still on screen once the break has
+    // actually started is stale by definition.
+    hide_notice(app);
+
     if let Some(popup) = app.get_webview_window("popup") {
         let _ = popup.hide();
     }
@@ -377,6 +464,65 @@ fn apply_autostart(app: &AppHandle, enabled: bool) {
     if let Err(error) = result {
         eprintln!("[unsit] could not update the autostart entry: {error}");
     }
+}
+
+/// The one shortcut, doing whatever the moment calls for.
+///
+/// Two jobs rather than two keys: a waiting prompt gets the focus so it can be
+/// answered, and the rest of the time it says how long is left. Three separate
+/// shortcuts in an app this small is three things to remember.
+fn on_hotkey(app: &AppHandle) {
+    let shared = app.state::<Shared>();
+
+    let (context, prompt_waiting, line) = {
+        let core = lock(&shared);
+        let Some(profile) = core.profile() else {
+            return;
+        };
+        let snapshot = UiState::build(
+            &core.machine,
+            &core.profile,
+            &profile,
+            &core.config,
+            SystemTime::now(),
+            platform::idle_duration(),
+        );
+        let mode = i18n::profile_name(core.config.general.locale, &core.profile);
+        (
+            core.machine.context,
+            matches!(core.machine.state, State::Prompt { .. }),
+            status(&snapshot, &mode),
+        )
+    };
+
+    // Nothing of ours can be drawn over an exclusive-fullscreen game, and
+    // taking the foreground there drops the player out of it. Doing nothing is
+    // the better answer.
+    if context == Context::ExclusiveGame {
+        return;
+    }
+
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if prompt_waiting {
+            // The popup is already on screen; what is missing is the cursor,
+            // which the game owns. Having just received a hotkey is one of the
+            // few things that earns a background process the right to take the
+            // foreground, so this is the one moment it can be done honestly.
+            if let Some(window) = handle.get_webview_window("popup") {
+                let _ = window.set_focus();
+            }
+            return;
+        }
+
+        show_notice(
+            &handle,
+            Notice {
+                title: line,
+                body: None,
+            },
+        );
+    });
 }
 
 fn show_settings(app: &AppHandle) {
@@ -467,7 +613,7 @@ fn toggle_pause(app: AppHandle) {
 fn get_settings(app: AppHandle) -> SettingsView {
     let shared = app.state::<Shared>();
     let core = lock(&shared);
-    SettingsView::build(&core.config, &core.profile)
+    SettingsView::build(&core.config, &core.profile, core.hotkey_registered)
 }
 
 /// Bounds for the two numbers the settings window can change.
@@ -568,6 +714,16 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    // Release would fire a second time for one press.
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        on_hotkey(app);
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .on_window_event(|window, event| {
             // Closing settings must not take the app down with it — the tray is
@@ -593,11 +749,14 @@ pub fn run() {
             let machine = Machine::new(SystemTime::now(), &profile);
 
             let autostart = config.general.autostart;
+            let hotkey = config.general.hotkey.clone();
             let core = Core {
                 machine,
                 config,
                 profile: profile_name,
                 context_source,
+                hotkey_registered: false,
+                notice_until: None,
             };
             let model = core.menu_model();
             app.manage(Shared {
@@ -607,6 +766,32 @@ pub fn run() {
             let handle = app.handle().clone();
             tray::create(&handle, &model, on_menu)?;
             apply_autostart(&handle, autostart);
+
+            // A shortcut someone else already owns fails to register, and that
+            // is not a reason to refuse to start — it just means this one way
+            // in is unavailable.
+            let claimed = match hotkey.parse::<tauri_plugin_global_shortcut::Shortcut>() {
+                Ok(shortcut) => {
+                    match tauri_plugin_global_shortcut::GlobalShortcutExt::global_shortcut(&handle)
+                        .register(shortcut)
+                    {
+                        Ok(()) => true,
+                        Err(error) => {
+                            eprintln!("[unsit] could not register {hotkey}: {error}");
+                            false
+                        }
+                    }
+                }
+                Err(error) => {
+                    eprintln!("[unsit] {hotkey} is not a valid shortcut: {error}");
+                    false
+                }
+            };
+
+            // Recorded rather than only logged: in a release build nobody ever
+            // sees stderr, and a shortcut that silently does nothing is worse
+            // than one that says it is unavailable.
+            lock(&app.state::<Shared>()).hotkey_registered = claimed;
 
             // Built now rather than when a break starts: a fullscreen webview
             // takes long enough to create that doing it on demand shows.

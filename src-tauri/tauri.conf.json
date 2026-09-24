@@ -20,6 +20,20 @@
         "visible": false
       },
       {
+        "label": "notice",
+        "title": "Unsit",
+        "url": "notice/index.html",
+        "width": 300,
+        "height": 86,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false
+      },
+      {
         "label": "popup",
         "title": "Unsit",
         "url": "popup/index.html",

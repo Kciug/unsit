@@ -71,44 +71,44 @@ pub fn profile_name(locale: Locale, key: &str) -> String {
     }
 }
 
-pub fn tooltip_break(locale: Locale, remaining: &str) -> String {
+pub fn status_break(locale: Locale, remaining: &str) -> String {
     match locale {
-        Locale::En => format!("Unsit — break, {remaining} left"),
-        Locale::Pl => format!("Unsit — przerwa, zostało {remaining}"),
+        Locale::En => format!("break, {remaining} left"),
+        Locale::Pl => format!("przerwa, zostało {remaining}"),
     }
 }
 
-pub fn tooltip_held(locale: Locale) -> String {
+pub fn status_held(locale: Locale) -> String {
     match locale {
-        Locale::En => "Unsit — counter stopped, step away".into(),
-        Locale::Pl => "Unsit — licznik stoi, odejdź od klawiatury".into(),
+        Locale::En => "counter stopped, step away".into(),
+        Locale::Pl => "licznik stoi, odejdź od klawiatury".into(),
     }
 }
 
-pub fn tooltip_due(locale: Locale, mode: &str) -> String {
+pub fn status_due(locale: Locale, mode: &str) -> String {
     match locale {
-        Locale::En => format!("Unsit — {mode}, break due"),
-        Locale::Pl => format!("Unsit — {mode}, przerwa się należy"),
+        Locale::En => format!("{mode} — break due"),
+        Locale::Pl => format!("{mode} — przerwa się należy"),
     }
 }
 
-pub fn tooltip_counting(locale: Locale, mode: &str, remaining: &str) -> String {
+pub fn status_counting(locale: Locale, mode: &str, remaining: &str) -> String {
     match locale {
-        Locale::En => format!("Unsit — {mode}, break in {remaining}"),
-        Locale::Pl => format!("Unsit — {mode}, przerwa za {remaining}"),
+        Locale::En => format!("{mode} — break in {remaining}"),
+        Locale::Pl => format!("{mode} — przerwa za {remaining}"),
     }
 }
 
-pub fn tooltip_done(locale: Locale) -> String {
+pub fn status_done(locale: Locale) -> String {
     match locale {
-        Locale::En => "Unsit — break over, welcome back".into(),
-        Locale::Pl => "Unsit — po przerwie, witaj z powrotem".into(),
+        Locale::En => "break over, welcome back".into(),
+        Locale::Pl => "po przerwie, witaj z powrotem".into(),
     }
 }
 
-pub fn tooltip_paused(locale: Locale) -> String {
+pub fn status_paused(locale: Locale) -> String {
     match locale {
-        Locale::En => "Unsit — paused".into(),
-        Locale::Pl => "Unsit — zapauzowane".into(),
+        Locale::En => "paused".into(),
+        Locale::Pl => "zapauzowane".into(),
     }
 }

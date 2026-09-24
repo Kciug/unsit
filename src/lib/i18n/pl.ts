@@ -26,6 +26,9 @@ export const pl: Dict = {
   'settings.language': 'Język',
   'settings.autostart': 'Uruchamiaj z Windowsem',
   'settings.sound': 'Dźwięk, gdy zaczyna się przerwa',
+  'settings.hotkey': 'Skrót',
+  'settings.hotkeyHint': 'Przenosi czekające okienko na wierzch albo pokazuje pozostały czas.',
+  'settings.hotkeyTaken': 'Niedostępny — zajmuje go inna aplikacja. Zmień go w config.toml.',
 
   'tray.pause': 'Pauza',
   'tray.resume': 'Wznów',

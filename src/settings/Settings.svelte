@@ -80,6 +80,16 @@
         />
         {$t('settings.sound')}
       </label>
+
+      <!-- Read-only for now: capturing a key combination properly is its own
+           piece of work, and config.toml can already change it. -->
+      <div class="hotkey">
+        <span>{$t('settings.hotkey')}</span>
+        <kbd>{settings.hotkey}</kbd>
+      </div>
+      <p class="note" class:warn={!settings.hotkeyRegistered}>
+        {settings.hotkeyRegistered ? $t('settings.hotkeyHint') : $t('settings.hotkeyTaken')}
+      </p>
     {/if}
   </section>
 
@@ -204,6 +214,25 @@
   .note {
     margin: 0;
     color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .note.warn {
+    color: #e0a34a;
+  }
+
+  .hotkey {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  kbd {
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    font-family: inherit;
     font-size: 0.8rem;
   }
 </style>

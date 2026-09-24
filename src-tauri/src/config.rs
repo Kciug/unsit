@@ -120,6 +120,11 @@ pub struct General {
     /// remember to launch is a break reminder that never runs.
     #[serde(default = "default_autostart")]
     pub autostart: bool,
+    /// One shortcut, doing whatever makes sense for the moment: it pulls focus
+    /// onto a waiting prompt so it can be clicked from inside a game, and
+    /// otherwise shows how long is left.
+    #[serde(default = "default_hotkey")]
+    pub hotkey: String,
     /// Play a sound when a break falls due.
     ///
     /// On by default, and the one setting worth thinking twice before turning
@@ -189,6 +194,12 @@ fn default_sound() -> bool {
     true
 }
 
+/// Deliberately not a bare function key: games use those. Ctrl+Alt is rare
+/// enough in a game binding to be safe, and Win+B belongs to the shell.
+fn default_hotkey() -> String {
+    "Ctrl+Alt+B".to_owned()
+}
+
 impl Default for Config {
     fn default() -> Self {
         let mut profiles = BTreeMap::new();
@@ -253,6 +264,7 @@ impl Default for Config {
                 idle_threshold_sec: 5,
                 locale: Locale::En,
                 autostart: true,
+                hotkey: default_hotkey(),
                 sound: true,
             },
             profiles,

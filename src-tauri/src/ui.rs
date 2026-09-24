@@ -130,16 +130,22 @@ pub struct SettingsView {
     pub locale: Locale,
     pub autostart: bool,
     pub sound: bool,
+    pub hotkey: String,
+    /// False when something else already owns the shortcut, so the settings
+    /// window can say so instead of leaving a key that quietly does nothing.
+    pub hotkey_registered: bool,
     pub active_profile: String,
     pub profiles: Vec<ProfileView>,
 }
 
 impl SettingsView {
-    pub fn build(config: &Config, active: &str) -> Self {
+    pub fn build(config: &Config, active: &str, hotkey_registered: bool) -> Self {
         Self {
             locale: config.general.locale,
             autostart: config.general.autostart,
             sound: config.general.sound,
+            hotkey: config.general.hotkey.clone(),
+            hotkey_registered,
             active_profile: active.to_owned(),
             profiles: config
                 .profiles
@@ -159,4 +165,17 @@ fn remaining(deadline: Timestamp, now: Timestamp) -> u64 {
         .duration_since(now)
         .map(|left| left.as_secs())
         .unwrap_or(0)
+}
+
+pub const NOTICE_EVENT: &str = "unsit://notice";
+
+/// Text for the transient notice window.
+///
+/// Already translated: that window stands in for a Windows notification while
+/// a game is running, and the backend owns those strings because it owns the
+/// locale — the same reason the tray menu is built in Rust.
+#[derive(Debug, Clone, Serialize)]
+pub struct Notice {
+    pub title: String,
+    pub body: Option<String>,
 }

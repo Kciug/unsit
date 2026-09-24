@@ -24,6 +24,9 @@ export const en = {
   'settings.language': 'Language',
   'settings.autostart': 'Start with Windows',
   'settings.sound': 'Play a sound when a break is due',
+  'settings.hotkey': 'Shortcut',
+  'settings.hotkeyHint': 'Brings a waiting prompt to the front, or shows the time left.',
+  'settings.hotkeyTaken': 'Unavailable — another app already uses it. Change it in config.toml.',
 
   'tray.pause': 'Pause',
   'tray.resume': 'Resume',
