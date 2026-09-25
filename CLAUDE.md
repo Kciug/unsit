@@ -106,6 +106,8 @@ Breaking any of these breaks the project at its foundation:
 
 Five window kinds. `settings` is an ordinary window that hides rather than closes. `popup` is frameless and bottom-right. `notice` is the transient one, top-right, standing in for a Windows notification while a game is running. `overlay` is **one per monitor**, transparent and fullscreen, and is created at startup rather than when a break begins. `flyout` is the tray panel.
 
+**Windows exist before the backend does.** Tauri creates every window declared in `tauri.conf.json` before `setup` runs, hidden or not, and their webviews load and start calling commands straight away. A page that fetches on mount is therefore asking while the shared state is still being assembled — which crashed v0.2.0 outright and left v0.2.1 with an empty settings window. So state is **pushed when a window is shown**, not pulled when it mounts: `show_settings` and `toggle_flyout` both send their payload before revealing the window. Every `state::<Shared>()` access also goes through `shared()`, which uses `try_state` and gives up quietly rather than panicking, naming itself in the log.
+
 Two rules they share. Anything meant to appear over a borderless game must be re-raised with `platform::raise_above_everything` on every show — `always_on_top` alone loses to both the taskbar and a fullscreen game, and this has already been the cause of two bugs. And **only the flyout takes focus**: every other window is focus-free so it can never pull someone out of a game, while the flyout needs focus because losing it is how a tray panel knows to close.
 
 Config is TOML at `%APPDATA%\Unsit\config.toml`; stats are append-only JSONL, with SQLite deferred until queries actually hurt.

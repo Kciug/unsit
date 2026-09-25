@@ -12,6 +12,7 @@
     setSound,
   } from '../lib/commands'
   import {
+    pushedSettings,
     uiState,
     type Escalation,
     type ProfileEdit,
@@ -34,8 +35,16 @@
   let newMode = $state('')
 
   async function refresh() {
-    settings = await getSettings()
+    const fetched = await getSettings()
+    if (fetched) settings = fetched
   }
+
+  // The backend pushes a fresh copy every time this window is opened. That is
+  // the reliable path: this page mounts while the app is still starting, so
+  // the fetch below can land before there is anything to answer it with.
+  $effect(() => {
+    if ($pushedSettings) settings = $pushedSettings
+  })
 
   onMount(refresh)
 

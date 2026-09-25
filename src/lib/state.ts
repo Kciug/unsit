@@ -169,3 +169,19 @@ export const flyout = readable<FlyoutView | null>(null, (set) => {
     void pending.then((unlisten) => unlisten()).catch(() => {})
   }
 })
+
+export const SETTINGS_EVENT = 'unsit://settings'
+
+/**
+ * Pushed when the settings window is opened.
+ *
+ * Asking on mount is not enough: every window is created before the backend
+ * has finished starting, so the page's first request can land before there is
+ * anything to answer it with, and comes back empty.
+ */
+export const pushedSettings = readable<SettingsView | null>(null, (set) => {
+  const pending = listen<SettingsView>(SETTINGS_EVENT, (event) => set(event.payload))
+  return () => {
+    void pending.then((unlisten) => unlisten()).catch(() => {})
+  }
+})

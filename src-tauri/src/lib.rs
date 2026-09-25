@@ -19,7 +19,7 @@ use engine::{Context, Effect, Event, Machine, Policy, State};
 use platform::{ContextSource, WindowsContext};
 use ui::{
     FlyoutMode, FlyoutView, Notice, ProfileEdit, SettingsView, StateKind, UiState, FLYOUT_EVENT,
-    NOTICE_EVENT, STATE_EVENT,
+    NOTICE_EVENT, SETTINGS_EVENT, STATE_EVENT,
 };
 
 const TICK: Duration = Duration::from_secs(1);
@@ -301,12 +301,17 @@ fn show_notice(app: &AppHandle, notice: Notice) {
 
     let _ = app.emit_to("notice", NOTICE_EVENT, Some(notice));
 
+    // Bottom-right, where every other window of ours appears and where Windows
+    // puts its own notifications. It was top-right at first to keep clear of
+    // the prompt popup, but the two never share the screen — the warning is
+    // two minutes earlier, and the peek gives way to focusing a waiting prompt
+    // — so the corner was bought at the price of looking like a stray.
     let placement = match (platform::primary_work_area(), window.outer_size()) {
-        (Some((_, top, right, _)), Ok(size)) => {
+        (Some((_, _, right, bottom)), Ok(size)) => {
             let scale = window.scale_factor().unwrap_or(1.0);
             let margin = (POPUP_MARGIN * scale) as i32;
             let x = right - size.width as i32 - margin;
-            let y = top + margin;
+            let y = bottom - size.height as i32 - margin;
             let _ = window.set_position(PhysicalPosition::new(x, y));
             Some((x, y, size.width as i32, size.height as i32))
         }
@@ -630,11 +635,24 @@ fn on_hotkey(app: &AppHandle) {
 }
 
 fn show_settings(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+    let Some(window) = app.get_webview_window("settings") else {
+        return;
+    };
+
+    // Pushed rather than waited for. Every window is created from the config
+    // before setup runs, so the settings page mounts — and asks — while the
+    // shared state is still being assembled, and gets nothing. Sending it when
+    // the window is actually opened removes the race rather than racing better.
+    if let Some(state) = shared(app, "show_settings") {
+        let core = lock(&state);
+        let view = SettingsView::build(&core.config, &core.profile, core.hotkey_registered);
+        drop(core);
+        let _ = app.emit_to("settings", SETTINGS_EVENT, view);
     }
+
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
 }
 
 /// Switching mode starts a fresh cycle on the new cadence.

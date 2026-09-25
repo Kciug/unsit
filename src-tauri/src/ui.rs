@@ -206,6 +206,14 @@ pub const NOTICE_EVENT: &str = "unsit://notice";
 
 pub const FLYOUT_EVENT: &str = "unsit://flyout";
 
+/// Pushed when the settings window opens.
+///
+/// That window cannot simply ask on mount: every window is created from the
+/// config before `setup` runs, so its webview loads — and its first request
+/// lands — while the shared state is still being assembled. Pushing when it is
+/// actually shown removes the race instead of racing better.
+pub const SETTINGS_EVENT: &str = "unsit://settings";
+
 /// One selectable mode in the flyout, already named in the right language.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlyoutMode {
